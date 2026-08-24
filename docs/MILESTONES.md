@@ -261,13 +261,54 @@ Trusted domain registry implemented. ✅
 
 ---
 
-## Phase C — Workflow Orchestration
-
-**Status:** ⬜ Not started
+## Phase C — Workflow Orchestration ✅
 
 ### Goal
 
-WorkflowState, AgentRunner/WorkflowManager, full observe→plan→execute→verify loop.
+WorkflowState, AgentRunner, full observe→plan→execute→verify loop.
+
+### Deliverables
+
+- [x] **WorkflowState** (`app/models/workflow_state.py`) — first-class workflow model with 15+ fields
+- [x] **WorkflowStatus enum** — INITIALIZED, RUNNING, WAITING_FOR_USER, WAITING_FOR_AUTH, READY_FOR_CONFIRMATION, READY_FOR_SUBMISSION, COMPLETED, FAILED, ABORTED
+- [x] **ActionRecord** — history of all executed actions with verification status
+- [x] **AgentRunner** (`app/agent/runner.py`) — full observe→map→plan→policy→execute→verify loop
+- [x] **LLM planning** — structured JSON output from OpenRouter for action selection
+- [x] **Deterministic fallback** — works without LLM (fill fields in order, click submit)
+- [x] **Recovery logic** — bounded retries (max 3) with re-observation
+- [x] **Authentication checkpoints** — CAPTCHA/OTP/password → WAITING_FOR_AUTH
+- [x] **Max iteration limit** — prevents infinite loops (default 50)
+- [x] **20 tests** — WorkflowState, auth checkpoints, deterministic planning, LLM planning, recovery, max iterations
+
+### Agent Loop Architecture
+
+```
+User Task
+    ↓
+AgentRunner
+    ├── 1. OBSERVE (PageObserver)
+    ├── 2. CHECK AUTH → pause if CAPTCHA/OTP/password
+    ├── 3. MAP FIELDS (FieldMapper + LLM)
+    ├── 4. PLAN ACTION (LLM or deterministic)
+    ├── 5. POLICY CHECK (PolicyEngine)
+    ├── 6. EXECUTE (BrowserExecutor)
+    ├── 7. VERIFY (ActionVerifier)
+    ├── 8. RECORD (WorkflowState)
+    └── 9. REPEAT (or stop)
+```
+
+### Acceptance Criteria
+
+```
+AgentRunner exists and implements full loop. ✅
+WorkflowState tracks all workflow progress. ✅
+CAPTCHA/OTP/password pause for user. ✅
+Recovery logic with bounded retries. ✅
+LLM planning with deterministic fallback. ✅
+Max iteration limit prevents infinite loops. ✅
+```
+
+**Tests:** 20 new (Phase C), 268 total passed in 101.03s
 
 ---
 
