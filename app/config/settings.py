@@ -46,6 +46,14 @@ class Settings(BaseSettings):
 
     # Browser
     headless: bool = Field(default=True, description="Run browser in headless mode")
+    browser_mode: str = Field(
+        default="test",
+        description="Browser mode: 'test' (headless, automated) or 'user' (visible, interactive)",
+    )
+    vision_fallback_enabled: bool = Field(
+        default=True,
+        description="Enable screenshot-based vision fallback when semantic perception is insufficient",
+    )
 
     # Paths
     data_dir: Path = Field(default=PROJECT_ROOT / "data")
