@@ -13,6 +13,8 @@ from app.browser.verifiers.base import VerificationResult, VerificationStatus
 from app.browser.verifiers.check import verify_check
 from app.browser.verifiers.click import verify_click
 from app.browser.verifiers.fill import verify_fill
+from app.browser.verifiers.go_back import verify_go_back
+from app.browser.verifiers.press import verify_press
 from app.browser.verifiers.scroll import verify_scroll_to
 from app.browser.verifiers.select import verify_select
 from app.browser.verifiers.upload import verify_upload
@@ -33,6 +35,8 @@ _VERIFIERS = {
     "uncheck": verify_check,
     "upload": verify_upload,
     "scroll_to": verify_scroll_to,
+    "press": verify_press,
+    "go_back": verify_go_back,
 }
 
 
@@ -48,8 +52,13 @@ class ActionVerifier:
         action: BrowserAction,
         previous_state: PageState,
         current_state: PageState,
+        resolved_value: str | None = None,
     ) -> VerificationResult:
-        """Verify an action's result by comparing page states and live DOM."""
+        """Verify an action's result by comparing page states and live DOM.
+
+        Audit B3: resolved_value threads the vault-resolved string through
+        so verify_fill can check sensitive-data fills (value_ref path).
+        """
         verifier = _VERIFIERS.get(action.action)
         if verifier is None:
             return VerificationResult(
@@ -57,4 +66,7 @@ class ActionVerifier:
                 action_type=action.action,
                 message="Non-state-changing action, no verification needed",
             )
+        # Only fill verifier needs resolved_value (others ignore it)
+        if action.action == "fill":
+            return await verifier(page, action, previous_state, current_state, resolved_value=resolved_value)
         return await verifier(page, action, previous_state, current_state)

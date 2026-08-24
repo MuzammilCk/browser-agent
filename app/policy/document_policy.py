@@ -3,7 +3,7 @@
 Per audit #19:
 - Allowed file types
 - File size limits
-- MIME type validation
+- MIME type validation (audit B7 fix: magic bytes enforcement)
 - Document category matching
 - Path safety (no arbitrary filesystem paths)
 """
@@ -31,6 +31,32 @@ ALLOWED_EXTENSIONS: dict[str, list[str]] = {
     "pan_card": [".pdf", ".jpg", ".jpeg", ".png"],
 }
 
+# Max file size in bytes (default 5MB)
+MAX_FILE_SIZE = 5 * 1024 * 1024
+
+# Max file size per document type (overrides default)
+MAX_FILE_SIZES: dict[str, int] = {
+    "photo": 2 * 1024 * 1024,      # 2MB for photos
+    "signature": 1 * 1024 * 1024,  # 1MB for signature
+}
+
+# Audit B7: Magic byte signatures for MIME validation
+# Maps file extension → (magic_bytes_prefix, mime_type)
+MAGIC_BYTES: dict[str, list[tuple[bytes, str]]] = {
+    ".pdf": [(b"%PDF", "application/pdf")],
+    ".jpg": [
+        (b"\xff\xd8\xff\xe0", "image/jpeg"),  # JFIF
+        (b"\xff\xd8\xff\xe1", "image/jpeg"),  # EXIF
+        (b"\xff\xd8\xff\xdb", "image/jpeg"),  # Raw JPEG
+    ],
+    ".jpeg": [
+        (b"\xff\xd8\xff\xe0", "image/jpeg"),
+        (b"\xff\xd8\xff\xe1", "image/jpeg"),
+        (b"\xff\xd8\xff\xdb", "image/jpeg"),
+    ],
+    ".png": [(b"\x89PNG\r\n\x1a\n", "image/png")],
+}
+
 # Allowed MIME types per document type
 ALLOWED_MIMES: dict[str, list[str]] = {
     "aadhaar": ["application/pdf", "image/jpeg", "image/png"],
@@ -40,15 +66,6 @@ ALLOWED_MIMES: dict[str, list[str]] = {
     "signature": ["image/jpeg", "image/png"],
     "voter_id_doc": ["application/pdf", "image/jpeg", "image/png"],
     "pan_card": ["application/pdf", "image/jpeg", "image/png"],
-}
-
-# Max file size in bytes (default 5MB)
-MAX_FILE_SIZE = 5 * 1024 * 1024
-
-# Max file size per document type (overrides default)
-MAX_FILE_SIZES: dict[str, int] = {
-    "photo": 2 * 1024 * 1024,      # 2MB for photos
-    "signature": 1 * 1024 * 1024,  # 1MB for signature
 }
 
 
@@ -84,8 +101,30 @@ class DocumentPolicy:
     def __init__(self) -> None:
         self.allowed_extensions = ALLOWED_EXTENSIONS
         self.allowed_mimes = ALLOWED_MIMES
+        self.magic_bytes = MAGIC_BYTES
         self.max_file_size = MAX_FILE_SIZE
         self.max_file_sizes = MAX_FILE_SIZES
+
+    def _detect_mime_by_magic_bytes(self, file_path: Path) -> str | None:
+        """Detect MIME type by reading file header magic bytes.
+
+        Audit B7 fix: actual content-based validation instead of
+        relying solely on file extension (which is spoofable).
+        """
+        try:
+            with open(file_path, "rb") as f:
+                header = f.read(16)
+        except OSError:
+            return None
+
+        ext = file_path.suffix.lower()
+        signatures = self.magic_bytes.get(ext, [])
+        for prefix, mime in signatures:
+            if header[:len(prefix)] == prefix:
+                return mime
+
+        # Extension not in MAGIC_BYTES — can't validate, return None (skip check)
+        return None
 
     def validate_upload(
         self,
@@ -121,6 +160,19 @@ class DocumentPolicy:
                 file_type=ext,
             )
 
+        # Audit B7: Validate MIME type via magic bytes (not just extension)
+        detected_mime = self._detect_mime_by_magic_bytes(path)
+        if detected_mime is not None:
+            allowed_mimes = self.allowed_mimes.get(document_type, [])
+            if allowed_mimes and detected_mime not in allowed_mimes:
+                return DocumentPolicyResult(
+                    allowed=False,
+                    reason=f"File content is {detected_mime} (by magic bytes), "
+                           f"but {document_type} requires: {', '.join(allowed_mimes)}. "
+                           f"File may have been renamed from a different type.",
+                    file_type=ext,
+                )
+
         # Check file size
         try:
             file_size = path.stat().st_size
@@ -141,10 +193,12 @@ class DocumentPolicy:
                 file_size=file_size,
             )
 
-        # Check path safety — no symlinks to sensitive locations
+        # Check path safety — use proper Path.is_relative_to (Python 3.9+)
+        # instead of string startswith which has bypass via sibling dirs
         try:
             resolved = path.resolve()
-            if not str(resolved).startswith(str(path.parent.resolve())):
+            parent_resolved = path.parent.resolve()
+            if not resolved.is_relative_to(parent_resolved):
                 return DocumentPolicyResult(
                     allowed=False,
                     reason="File path resolves outside expected directory",

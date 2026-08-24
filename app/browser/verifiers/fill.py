@@ -20,8 +20,14 @@ logger = logging.getLogger(__name__)
 
 async def verify_fill(
     page: Page, action: BrowserAction, prev: PageState, curr: PageState,
+    resolved_value: str | None = None,
 ) -> VerificationResult:
-    """Verify a fill action had the intended effect."""
+    """Verify a fill action had the intended effect.
+
+    Audit B3 fix: resolved_value (from value_ref via vault) is now checked
+    against the live DOM, closing the gap where sensitive-data fills were
+    never verified.
+    """
     ref = action.target_ref
     if not ref:
         return make_uncertain("fill", message="No target ref to verify")
@@ -33,8 +39,9 @@ async def verify_fill(
     if target.disabled:
         return make_failure("fill", ref, message=f"Element {ref} became disabled after fill")
 
-    # Live DOM value check
-    expected_value = action.literal_value or ""
+    # Audit B3: check the resolved value (from vault/value_ref) OR literal_value
+    # Previously only literal_value was checked, skipping all sensitive fills
+    expected_value = resolved_value or action.literal_value or ""
     if expected_value:
         live_value = await _read_live_value(page, ref, target)
         if live_value is not None and live_value.strip() != expected_value.strip():

@@ -300,11 +300,12 @@ class TestDeterministicPlanning:
                     )
                     workflow.completed_bindings = ["e1"]
 
-        # Should eventually try to click submit
+        # Should eventually try to click submit — or halt at confirmation gate (audit B2)
         action_types = [a.action_type for a in workflow.actions_taken]
         assert "click" in action_types or workflow.status in (
             WorkflowStatus.READY_FOR_SUBMISSION,
             WorkflowStatus.WAITING_FOR_USER,
+            WorkflowStatus.READY_FOR_CONFIRMATION,  # B2: submit button now correctly gated
         )
 
     @pytest.mark.asyncio

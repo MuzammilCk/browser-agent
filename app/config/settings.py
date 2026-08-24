@@ -20,11 +20,19 @@ class Settings(BaseSettings):
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_model: str = Field(
         default="stealth/ox-alpha",
-        description="Primary reasoning model",
+        description=(
+            "Primary reasoning model. Note: 'stealth/ox-alpha' is an anonymous "
+            "free-tier model with contested data retention. For production use "
+            "with real PII, pin to a named provider (e.g. 'anthropic/claude-sonnet-4-20250514', "
+            "'openai/gpt-4o', 'google/gemini-2.0-flash-001'). "
+            "See https://openrouter.ai/models for options."
+        ),
     )
     openrouter_vision_model: str = Field(
         default="stealth/ox-alpha",
-        description="Vision-capable model for screenshot fallback",
+        description=(
+            "Vision model for screenshot-based fallback. Same privacy note as openrouter_model."
+        ),
     )
     openrouter_fallback_model: str = Field(
         default="",
@@ -35,6 +43,13 @@ class Settings(BaseSettings):
         ge=5,
         le=300,
         description="Timeout for OpenRouter API calls",
+    )
+
+    # Vault encryption (audit B6)
+    vault_encryption_key: str = Field(
+        default="",
+        description="Passphrase for Fernet vault encryption at rest. "
+        "If empty, vault is stored as plaintext (dev/test only).",
     )
 
     # Application

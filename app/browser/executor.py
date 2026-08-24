@@ -39,6 +39,7 @@ class ActionResult:
     recovery_required: bool = False
     user_action_required: bool = False
     policy_result: PolicyResult | None = None
+    resolved_value: str | None = None  # Audit B3: value_ref resolved to actual string
 
 
 class BrowserExecutor:
@@ -121,11 +122,13 @@ class BrowserExecutor:
             )
 
         if policy_result.needs_confirmation:
-            # For now, log the confirmation requirement
-            # In Phase C, this will pause for user confirmation
-            logger.warning(
-                "Policy REQUIRE_CONFIRMATION: %s — proceeding for now",
-                policy_result.reason,
+            # Audit B2 fix: halt execution instead of falling through
+            return ActionResult(
+                action=action,
+                success=False,
+                message=f"Policy REQUIRE_CONFIRMATION: {policy_result.reason}",
+                recovery_required=True,
+                policy_result=policy_result,
             )
 
         # ─── DOCUMENT POLICY (per audit #19) ──────────────────────
@@ -158,11 +161,13 @@ class BrowserExecutor:
             current_state = new_observation.page_state
 
             # Verify the action had the intended effect
+            # Audit B3: pass resolved_value so verify_fill can check vault fills
             verification = await self.verifier.verify(
                 page=page,
                 action=action,
                 previous_state=page_state,
                 current_state=current_state,
+                resolved_value=result.resolved_value,
             )
 
             result.verification = verification
@@ -298,7 +303,12 @@ class BrowserExecutor:
             )
         await locator.click()
         await locator.fill(value)
-        return ActionResult(action=action, success=True, message=f"Filled {action.target_ref}")
+        # Audit B3: thread resolved value through for verification
+        return ActionResult(
+            action=action, success=True,
+            message=f"Filled {action.target_ref}",
+            resolved_value=value,
+        )
 
     async def _execute_select(
         self, page: Page, action: BrowserAction, page_state: PageState

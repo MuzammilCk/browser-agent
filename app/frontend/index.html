@@ -496,6 +496,15 @@
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-sm);
             margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .task-item:hover {
+            border-color: var(--accent);
+            background: var(--bg-card-hover);
+        }
+        .task-item:active {
+            background: var(--accent-dim);
         }
         .task-item:last-child { margin-bottom: 0; }
         .task-item h5 {
@@ -549,6 +558,110 @@
             border: 1px solid var(--border);
         }
         .btn-secondary:hover { border-color: var(--text-muted); color: var(--text-primary); }
+        .btn-danger { background: var(--red); color: white; }
+        .btn-danger:hover { background: #b83e3e; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ── Automation Panel ── */
+        .auto-panel {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: var(--bg-surface);
+            border-top: 1px solid var(--border);
+            z-index: 900;
+            max-height: 50vh;
+            display: none;
+            flex-direction: column;
+        }
+        .auto-panel.active { display: flex; }
+        .auto-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            border-bottom: 1px solid var(--border-subtle);
+            flex-shrink: 0;
+        }
+        .auto-panel-header h3 {
+            font-size: 0.88rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .auto-status-badge {
+            padding: 0.15rem 0.5rem;
+            border-radius: 100px;
+            font-size: 0.65rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        .status-running { background: var(--accent-dim); color: var(--accent); }
+        .status-completed { background: var(--green-dim); color: var(--green); }
+        .status-failed { background: var(--red-dim); color: var(--red); }
+        .status-waiting { background: var(--amber-dim); color: var(--amber); }
+        .auto-panel-body {
+            display: flex;
+            overflow: hidden;
+            flex: 1;
+            min-height: 0;
+        }
+        .auto-screenshot {
+            flex: 1;
+            padding: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-base);
+            border-right: 1px solid var(--border-subtle);
+            min-height: 200px;
+        }
+        .auto-screenshot img {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+        }
+        .auto-screenshot .placeholder {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+        .auto-log {
+            width: 320px;
+            overflow-y: auto;
+            padding: 0.75rem;
+            flex-shrink: 0;
+        }
+        .auto-log-title {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.5rem;
+        }
+        .auto-log-entry {
+            padding: 0.4rem 0.6rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            margin-bottom: 0.3rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+        }
+        .auto-log-entry .log-action {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .auto-log-entry .log-msg {
+            color: var(--text-secondary);
+            margin-top: 0.1rem;
+        }
+        .auto-log-entry.success { border-left: 2px solid var(--green); }
+        .auto-log-entry.failed { border-left: 2px solid var(--red); }
+        .auto-log-entry.info { border-left: 2px solid var(--blue); }
+
+        /* ── Task Select in Modal ── */
+
 
         /* ── Loading / Empty ── */
         .loading {
@@ -672,6 +785,29 @@
             </div>
             <div class="modal-body" id="modalBody"></div>
             <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+
+    <!-- Automation Panel -->
+    <div class="auto-panel" id="autoPanel">
+        <div class="auto-panel-header">
+            <h3>
+                <span id="autoPanelTitle">Automation</span>
+                <span class="auto-status-badge status-running" id="autoStatusBadge">Starting</span>
+            </h3>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <span style="font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;" id="autoActionCount"></span>
+                <button class="btn btn-danger" style="padding:0.35rem 0.75rem;font-size:0.75rem;" onclick="abortAutomation()" id="autoAbortBtn">Stop</button>
+                <button class="btn btn-secondary" style="padding:0.35rem 0.75rem;font-size:0.75rem;" onclick="closeAutoPanel()">Hide</button>
+            </div>
+        </div>
+        <div class="auto-panel-body">
+            <div class="auto-screenshot" id="autoScreenshot">
+                <div class="placeholder">Waiting for screenshot...</div>
+            </div>
+            <div class="auto-log" id="autoLog">
+                <div class="auto-log-title">Action Log</div>
+            </div>
         </div>
     </div>
 
@@ -958,8 +1094,9 @@
                     let tags = '';
                     if (t.requires_auth) tags += '<span class="task-tag auth">Auth Required</span>';
                     if (t.requires_payment) tags += '<span class="task-tag payment">Payment</span>';
+                    const escapedTask = t.name.replace(/'/g, "\\'");
                     tasksHtml += `
-                        <div class="task-item">
+                        <div class="task-item" onclick="startAutomation('${site.domain}', '${escapedTask}')">
                             <h5>${t.name}</h5>
                             <p>${t.description}</p>
                             ${tags ? `<div class="task-tags">${tags}</div>` : ''}
@@ -976,7 +1113,7 @@
 
                 document.getElementById('modalFooter').innerHTML = `
                     <a href="${site.url}" target="_blank" class="btn btn-primary">Open Portal</a>
-                    <button class="btn btn-secondary" onclick="startAutomation('${site.domain}')">Start Automation</button>
+                    <button class="btn btn-secondary" onclick="startAutomation('${site.domain}')">Automate (Navigate Only)</button>
                 `;
 
                 document.getElementById('modalOverlay').classList.add('active');
@@ -997,9 +1134,143 @@
             if (e.key === 'Escape') closeModal();
         });
 
-        function startAutomation(domain) {
+        // ── Automation ──
+        let currentWorkflowId = null;
+        let autoPollInterval = null;
+        let currentSiteDomain = null;
+        let currentSiteTasks = [];
+
+        async function startAutomation(domain, task) {
             closeModal();
-            alert(`Automation for ${domain} - coming soon!`);
+            currentSiteDomain = domain;
+
+            task = task || '';
+
+            try {
+                const res = await fetch('/api/automate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ domain, task }),
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                currentWorkflowId = data.workflow_id;
+                showAutoPanel(domain, data.url);
+                startAutoPoll();
+            } catch (e) {
+                alert('Failed to start automation: ' + e.message);
+            }
+        }
+
+        function showAutoPanel(domain, url) {
+            const panel = document.getElementById('autoPanel');
+            panel.classList.add('active');
+            document.getElementById('autoPanelTitle').textContent = domain;
+            document.getElementById('autoStatusBadge').textContent = 'Starting';
+            document.getElementById('autoStatusBadge').className = 'auto-status-badge status-running';
+            document.getElementById('autoActionCount').textContent = '';
+            document.getElementById('autoScreenshot').innerHTML = '<div class="placeholder">Launching browser...</div>';
+            document.getElementById('autoLog').innerHTML = '<div class="auto-log-title">Action Log</div>';
+        }
+
+        function startAutoPoll() {
+            if (autoPollInterval) clearInterval(autoPollInterval);
+            autoPollInterval = setInterval(pollAutomation, 1500);
+            pollAutomation();
+        }
+
+        async function pollAutomation() {
+            if (!currentWorkflowId) return;
+
+            try {
+                const res = await fetch(`/api/automate/${currentWorkflowId}`);
+                const wf = await res.json();
+
+                if (wf.error) return;
+
+                // Update status badge
+                const badge = document.getElementById('autoStatusBadge');
+                badge.textContent = wf.status;
+                if (['running', 'starting', 'launching_browser', 'navigating'].includes(wf.status)) {
+                    badge.className = 'auto-status-badge status-running';
+                } else if (wf.status === 'completed') {
+                    badge.className = 'auto-status-badge status-completed';
+                } else if (wf.status === 'failed' || wf.status === 'aborted') {
+                    badge.className = 'auto-status-badge status-failed';
+                } else if (wf.status.includes('waiting')) {
+                    badge.className = 'auto-status-badge status-waiting';
+                } else {
+                    badge.className = 'auto-status-badge status-running';
+                }
+
+                // Update action count
+                document.getElementById('autoActionCount').textContent =
+                    wf.total_actions ? `${wf.successful_actions}/${wf.total_actions} actions` : '';
+
+                // Update log
+                const logEl = document.getElementById('autoLog');
+                let logHtml = '<div class="auto-log-title">Action Log</div>';
+                wf.actions.forEach(a => {
+                    const cls = a.success ? 'success' : 'failed';
+                    logHtml += `<div class="auto-log-entry ${cls}">
+                        <div class="log-action">${a.type} ${a.target || ''}</div>
+                        <div class="log-msg">${a.message}</div>
+                    </div>`;
+                });
+                if (wf.checkpoints && wf.checkpoints.length) {
+                    wf.checkpoints.forEach(cp => {
+                        logHtml += `<div class="auto-log-entry info">
+                            <div class="log-action">Checkpoint</div>
+                            <div class="log-msg">${cp}</div>
+                        </div>`;
+                    });
+                }
+                if (wf.error) {
+                    logHtml += `<div class="auto-log-entry failed">
+                        <div class="log-action">Error</div>
+                        <div class="log-msg">${wf.error}</div>
+                    </div>`;
+                }
+                logEl.innerHTML = logHtml;
+                logEl.scrollTop = logEl.scrollHeight;
+
+                // Update screenshot
+                if (wf.screenshot_count > 0) {
+                    const imgEl = document.getElementById('autoScreenshot');
+                    if (!imgEl.querySelector('img') || imgEl.querySelector('.placeholder')) {
+                        imgEl.innerHTML = `<img src="/api/automate/${currentWorkflowId}/screenshot?step=latest" />`;
+                    } else {
+                        // Refresh screenshot
+                        const img = imgEl.querySelector('img');
+                        img.src = `/api/automate/${currentWorkflowId}/screenshot?step=latest?t=${Date.now()}`;
+                    }
+                }
+
+                // Stop polling if finished
+                if (['completed', 'failed', 'aborted'].includes(wf.status)) {
+                    clearInterval(autoPollInterval);
+                    autoPollInterval = null;
+                    document.getElementById('autoAbortBtn').disabled = true;
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+
+        async function abortAutomation() {
+            if (!currentWorkflowId) return;
+            try {
+                await fetch(`/api/automate/${currentWorkflowId}/abort`, { method: 'POST' });
+            } catch (e) {}
+        }
+
+        function closeAutoPanel() {
+            document.getElementById('autoPanel').classList.remove('active');
         }
 
         loadData();

@@ -80,6 +80,16 @@ class WorkflowState(BaseModel):
         description="Current page type classification",
     )
 
+    # Confirmation gate (audit B2)
+    pending_action: dict | None = Field(
+        default=None,
+        description="Action awaiting user confirmation (serialized BrowserAction)",
+    )
+    pending_observation_id: str = Field(
+        default="",
+        description="Observation ID for the pending action (stale-ref prevention)",
+    )
+
     # Field mapping state
     completed_bindings: list[str] = Field(
         default_factory=list,

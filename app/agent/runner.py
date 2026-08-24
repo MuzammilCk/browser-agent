@@ -118,9 +118,9 @@ class AgentRunner:
             self._handle_no_action(workflow, mapping)
             return "break"
 
-        # 5. POLICY CHECK
+        # 5. POLICY CHECK — audit B2 fix: REQUIRE_CONFIRMATION now halts
         policy_result = self._policy.evaluate(action, observation.page_state)
-        if self._check_policy(workflow, policy_result):
+        if self._check_policy(workflow, policy_result, action, observation):
             return "break"
 
         # 6. EXECUTE
@@ -166,7 +166,18 @@ class AgentRunner:
             workflow.status = WorkflowStatus.WAITING_FOR_USER
             workflow.set_error("user_required", f"Cannot map {len(mapping.unmapped_fields)} fields")
 
-    def _check_policy(self, workflow: WorkflowState, policy_result) -> bool:
+    def _check_policy(
+        self,
+        workflow: WorkflowState,
+        policy_result,
+        action: BrowserAction | None = None,
+        observation: PageObservation | None = None,
+    ) -> bool:
+        """Check policy result. Returns True to halt the iteration.
+
+        Audit B2 fix: REQUIRE_CONFIRMATION now stores the pending action
+        and halts execution instead of falling through.
+        """
         if policy_result.blocked:
             workflow.set_error("user_required", policy_result.reason)
             workflow.status = WorkflowStatus.WAITING_FOR_USER
@@ -176,8 +187,70 @@ class AgentRunner:
             workflow.status = WorkflowStatus.WAITING_FOR_USER
             return True
         if policy_result.needs_confirmation:
+            # Store the pending action so caller can present it and resume
+            if action is not None:
+                workflow.pending_action = action.model_dump()
+            if observation is not None:
+                workflow.pending_observation_id = observation.observation_id
             workflow.status = WorkflowStatus.READY_FOR_CONFIRMATION
+            workflow.add_checkpoint(
+                f"Confirmation required: {policy_result.reason}"
+            )
+            logger.warning(
+                "REQUIRE_CONFIRMATION: %s — halting for user approval",
+                policy_result.reason,
+            )
+            return True
         return False
+
+    async def resume(
+        self,
+        page: Any,
+        workflow: WorkflowState,
+        approved: bool,
+    ) -> WorkflowState:
+        """Resume after a confirmation pause.
+
+        If approved, re-observes the page and executes the stored pending action.
+        If declined, stops the workflow cleanly.
+
+        Audit B2 fix: provides the resume-after-confirmation flow.
+        """
+        if workflow.pending_action is None:
+            workflow.status = WorkflowStatus.FAILED
+            workflow.set_error("no_pending_action", "No pending action to resume")
+            return workflow
+
+        if not approved:
+            workflow.pending_action = None
+            workflow.pending_observation_id = ""
+            workflow.status = WorkflowStatus.ABORTED
+            workflow.add_checkpoint("User declined confirmation")
+            return workflow
+
+        # Re-observe before replaying (never trust a paused snapshot)
+        observation = await self._observer.observe(page)
+        self._update_workflow_observation(workflow, observation)
+
+        # Reconstruct the action from stored state
+        try:
+            action = BrowserAction(**workflow.pending_action)
+        except Exception as e:
+            workflow.status = WorkflowStatus.FAILED
+            workflow.set_error("invalid_pending_action", str(e))
+            return workflow
+
+        # Clear pending state
+        workflow.pending_action = None
+        workflow.pending_observation_id = ""
+
+        # Execute the confirmed action
+        policy_result = self._policy.evaluate(action, observation.page_state)
+        result = await self._executor.execute(page, action, observation)
+        self._record_action(workflow, action, result, policy_result, observation)
+
+        # Continue the normal loop from here
+        return workflow
 
     def _record_action(
         self, workflow: WorkflowState, action: BrowserAction,

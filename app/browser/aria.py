@@ -1,7 +1,13 @@
-"""ARIA/accessibility snapshot extraction from Playwright pages."""
+"""ARIA/accessibility snapshot extraction from Playwright pages.
+
+Fix for audit B1: aria_snapshot(mode="ai") throws TypeError on Playwright
+>=1.50 which doesn't accept `mode`. We introspect the installed driver's
+actual signature once at import time and only pass supported kwargs.
+"""
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import TYPE_CHECKING
 
@@ -10,16 +16,42 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# ── Introspect Playwright's actual aria_snapshot signature once ─────────
+_supported_snapshot_kwargs: set[str] = set()
+
+def _probe_snapshot_kwargs() -> None:
+    """Detect which kwargs the installed Playwright's aria_snapshot accepts."""
+    global _supported_snapshot_kwargs
+    try:
+        from playwright.async_api import Locator
+        sig = inspect.signature(Locator.aria_snapshot)
+        _supported_snapshot_kwargs = set(sig.parameters.keys()) - {"self"}
+        logger.debug("aria_snapshot supported kwargs: %s", _supported_snapshot_kwargs)
+    except Exception:
+        # If introspection fails, assume minimal (no kwargs beyond default)
+        _supported_snapshot_kwargs = set()
+        logger.warning("Could not introspect aria_snapshot signature; assuming no extra kwargs")
+
+_probe_snapshot_kwargs()
+
+
+def _build_snapshot_kwargs(**hints: bool) -> dict:
+    """Build kwargs dict, only including params the driver actually accepts."""
+    candidates = {"mode": hints.get("mode", False), "refs": hints.get("refs", False)}
+    return {k: v for k, v in candidates.items() if k in _supported_snapshot_kwargs and v}
+
 
 async def extract_aria_snapshot(page: Page) -> str:
     """Extract the ARIA accessibility snapshot from the page body.
 
-    Uses Playwright's AI-oriented aria_snapshot() to get a structured
-    accessibility representation with element references.
+    Uses Playwright's aria_snapshot() to get a structured
+    accessibility representation. Only passes kwargs the installed
+    driver actually accepts (audit B1 fix).
     """
     try:
         body = page.locator("body")
-        snapshot = await body.aria_snapshot(mode="ai")
+        kwargs = _build_snapshot_kwargs(mode=True)
+        snapshot = await body.aria_snapshot(**kwargs)
         logger.debug("ARIA snapshot extracted (%d chars)", len(snapshot))
         return snapshot
     except Exception:
@@ -35,11 +67,13 @@ async def extract_aria_snapshot_with_refs(page: Page) -> str:
     """
     try:
         body = page.locator("body")
-        # Try refs=True first, fall back to mode="ai" if not supported
+        kwargs = _build_snapshot_kwargs(mode=True, refs=True)
+        # Fallback: if refs was not in supported kwargs, try without it
         try:
-            snapshot = await body.aria_snapshot(mode="ai", refs=True)
+            snapshot = await body.aria_snapshot(**kwargs)
         except TypeError:
-            snapshot = await body.aria_snapshot(mode="ai")
+            kwargs_no_refs = _build_snapshot_kwargs(mode=True)
+            snapshot = await body.aria_snapshot(**kwargs_no_refs)
         logger.debug("ARIA snapshot with refs extracted (%d chars)", len(snapshot))
         return snapshot
     except Exception:
@@ -57,10 +91,12 @@ async def extract_frame_snapshots(page: Page) -> list[dict[str, str]]:
             continue
         try:
             body = frame.locator("body")
+            kwargs = _build_snapshot_kwargs(mode=True, refs=True)
             try:
-                snapshot = await body.aria_snapshot(mode="ai", refs=True)
+                snapshot = await body.aria_snapshot(**kwargs)
             except TypeError:
-                snapshot = await body.aria_snapshot(mode="ai")
+                kwargs_no_refs = _build_snapshot_kwargs(mode=True)
+                snapshot = await body.aria_snapshot(**kwargs_no_refs)
             frame_snapshots.append({
                 "frame_url": frame.url,
                 "frame_name": frame.name,

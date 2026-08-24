@@ -272,13 +272,13 @@ class TestVaultManager:
     def test_create_sample_vault(self) -> None:
         manager = VaultManager(vault_dir=self.tmp_dir)
         vault = manager.create_sample_vault()
-        assert vault.full_name == "Rajesh Kumar Sharma"
-        assert vault.state == "Karnataka"
+        assert vault.full_name == "Rajesh Kumar Singh"
+        assert vault.state == "Delhi"
         assert vault.aadhaar_number != ""
 
         # Verify it was saved
         loaded = manager.load_vault()
-        assert loaded.full_name == "Rajesh Kumar Sharma"
+        assert loaded.full_name == "Rajesh Kumar Singh"
 
     def test_register_document(self) -> None:
         manager = VaultManager(vault_dir=self.tmp_dir)
@@ -354,18 +354,18 @@ class TestVaultResolverIntegration:
 
         resolver = ValueResolver(vault)
 
-        # Verify all populated fields resolve
+        # Verify all populated fields resolve (matches sample vault synthetic data)
         populated_fields = {
-            "USER.full_name": "Rajesh Kumar Sharma",
+            "USER.full_name": "Rajesh Kumar Singh",
             "USER.first_name": "Rajesh",
-            "USER.last_name": "Sharma",
+            "USER.last_name": "Singh",
             "USER.date_of_birth": "15/08/1990",
             "USER.gender": "Male",
-            "USER.state": "Karnataka",
-            "USER.district": "Bangalore Urban",
-            "USER.aadhaar_name": "Rajesh Kumar Sharma",
-            "USER.pan_number": "ABCTS1234K",
-            "USER.annual_income": "600000",
+            "USER.state": "Delhi",
+            "USER.district": "New Delhi",
+            "USER.aadhaar_name": "Rajesh Kumar Singh",
+            "USER.pan_number": "ABCDE1234F",
+            "USER.annual_income": "1200000",
             "USER.category": "General",
         }
 
