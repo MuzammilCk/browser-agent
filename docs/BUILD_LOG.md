@@ -252,6 +252,30 @@
 - Sample vault creates realistic Indian form data ✅
 - End-to-end: create vault → resolve → verify values ✅
 
+### [Phase 3.5] Hardening — 14 audit issues — 2026-08-24
+
+**What was done:**
+- UNCERTAIN verification now stops progression (#1)
+- ActionResult includes post_observation, recovery_required, user_action_required (#2, #23)
+- Observation-scoped refs with stale reference rejection (#3)
+- Upload verification targets exact element via DOM lookup (#5)
+- Removed 'open' from LLM BrowserAction schema (#6)
+- Upload requires document_ref only — no raw filesystem paths (#7, #9)
+- Sensitive field policy blocks Aadhaar/PAN patterns in literal_value (#8)
+- Enhanced click verification (disabled state, content comparison) (#15)
+- scroll_to verifies viewport via bounding rect (#17)
+
+**Files modified:**
+- `app/models/actions.py` — Removed open, upload=document_ref only, sensitive policy, observation_id
+- `app/browser/executor.py` — UNCERTAIN stops, post_observation in ActionResult
+- `app/browser/verification.py` — Targeted upload, viewport check, enhanced click
+- `tests/integration/test_executor.py` — Updated for new API
+- `tests/synthetic_forms/test_verification.py` — Updated for UNCERTAIN behavior
+- `tests/unit/test_models.py` — Updated open validation test
+
+**Tests run:**
+- `python -m pytest tests/ -v` — 128 passed in 102.28s
+
 <!-- Example entry:
 
 ### [Phase 0.1] Repository bootstrap — 2024-08-24

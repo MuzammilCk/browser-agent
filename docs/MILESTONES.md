@@ -144,6 +144,24 @@ A test page can be manipulated reliably through typed Python functions. ✅
 
 **Tests:** 77 passed in 75.83s
 
+### Phase 3.5 Hardening — 2026-08-24
+
+**Audit issues addressed:** #1-#9, #14, #15, #17, #20-#23
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | UNCERTAIN treated as success | UNCERTAIN now stops progression, recovery_required=True |
+| 2+23 | Post-observation trapped | ActionResult has post_observation, recovery_required, user_action_required |
+| 3 | Refs not observation-scoped | BrowserAction has observation_id, stale ref rejected |
+| 5 | Upload verification too broad | Targets exact element via DOM lookup |
+| 6 | open in LLM schema | Removed from BrowserAction Literal types |
+| 7+9 | Upload allows raw paths | Upload requires document_ref only |
+| 8 | literal_value sensitive data | Blocks Aadhaar/PAN patterns |
+| 15 | Click verification weak | Added disabled state, content comparison |
+| 17 | scroll_to no viewport check | Verifies bounding rect in viewport |
+
+**Tests:** 128 passed in 102.28s
+
 ---
 
 ## Phase 3 — Verification Engine
