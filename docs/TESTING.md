@@ -199,6 +199,18 @@ pytest tests/unit/test_page_state.py -v
 - VaultManager (6 tests)
 - Integration (3 tests)
 
+### Phase 5 — OpenRouter LLM Gateway — 2026-08-24
+
+**Command:** `pytest tests/unit/test_llm.py -v`
+**Result:** 22 passed in 5.19s
+
+**Test coverage:**
+- LLMGateway protocol (3 tests): implements protocol, has complete, has close
+- LLM schemas (3 tests): response defaults, usage, error hierarchy
+- Retry policy (5 tests): timeout retry, rate limit retry, bad request no-retry, exhaustion, server error retry
+- OpenRouter gateway (10 tests): success, schema, timeout, rate limit, server error, bad request, malformed, non-JSON, close, context manager
+- Gateway+retry integration (1 test): retry then success
+
 ---
 
 ## Synthetic Test Pages

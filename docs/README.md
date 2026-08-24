@@ -62,7 +62,7 @@ After each implementation step, update:
 | Phase 2 — Deterministic browser executor | ✅ Complete |
 | Phase 3 — Verification engine | ✅ Complete |
 | Phase 4 — User vault + document registry | ✅ Complete |
-| Phase 5 — OpenRouter LLM gateway | ⬜ Not started |
+| Phase 5 — OpenRouter LLM gateway | ✅ Complete |
 | Phase 6 — Semantic field mapper | ⬜ Not started |
 | Phase 7 — Agent control loop | ⬜ Not started |
 | Phase 8 — Risk and approval gate | ⬜ Not started |

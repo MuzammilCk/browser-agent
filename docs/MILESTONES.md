@@ -144,9 +144,7 @@ DOCUMENT.income_certificate locally without exposing raw values. ✅
 
 ---
 
-## Phase 5 — OpenRouter LLM Gateway
-
-**Status:** ⬜ Not started
+## Phase 5 — OpenRouter LLM Gateway ✅
 
 ### Goal
 
@@ -154,14 +152,28 @@ OpenRouter API client with structured output, retries, and cost tracking.
 
 ### Deliverables
 
-- [ ] `LLMGateway` protocol/interface
-- [ ] `OpenRouterGateway` implementation
-- [ ] Structured JSON schema output
-- [ ] Timeout/retry policy (bounded)
-- [ ] Model configuration via env vars
-- [ ] Request/response logging with redaction
-- [ ] Usage/cost metadata recording
-- [ ] Tests: valid output, timeout, 429, 5xx, malformed output, fail-closed
+- [x] `LLMGateway` protocol/interface
+- [x] `OpenRouterGateway` implementation
+- [x] Structured JSON schema output
+- [x] Timeout/retry policy (bounded, 3 retries with exponential backoff)
+- [x] Model configuration via env vars (`OPENROUTER_MODEL`)
+- [x] Request/response logging with redaction
+- [x] Usage/cost metadata recording (`LLMUsage`)
+- [x] Error hierarchy (Timeout, RateLimit, Server, BadRequest, MalformedResponse)
+- [x] Multimodal support (images via base64)
+- [x] Async context manager
+- [x] 22 tests (protocol, schemas, retry, gateway, integration)
+
+### Acceptance Criteria
+
+```
+LLMGateway protocol defined and satisfied. ✅
+OpenRouterGateway retries on timeout/429/5xx. ✅
+Structured JSON schema output works. ✅
+Fail-closed on all errors. ✅
+```
+
+**Tests:** 22 passed in 5.19s, 150 total
 
 ---
 

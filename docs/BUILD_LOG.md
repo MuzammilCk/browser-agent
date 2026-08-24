@@ -97,3 +97,37 @@
 - Wrote 34 comprehensive tests (vault, resolvers, classification, manager, integration)
 
 **Tests:** 34 passed in 0.41s (Phase 4), 128 total
+
+### [Phase 5] OpenRouter LLM Gateway — 2026-08-24
+
+**What was done:**
+- Created LLMGateway protocol (app/llm/base.py)
+- Created OpenRouterGateway implementation (app/llm/openrouter.py)
+- Created LLM request/response schemas and error hierarchy (app/llm/schemas.py)
+- Created bounded retry policy with exponential backoff (app/llm/retry.py)
+- Wrote 22 tests (protocol, schemas, retry, gateway, integration)
+
+**Files created:**
+- `app/llm/base.py` — LLMGateway protocol
+- `app/llm/openrouter.py` — OpenRouter API gateway
+- `app/llm/schemas.py` — LLMResponse, LLMUsage, error types
+- `app/llm/retry.py` — RetryPolicy with bounded retries
+- `tests/unit/test_llm.py` — 22 tests
+
+**Tests run:**
+- `python -m pytest tests/ -v` — 150 passed in 92.81s
+
+**Verification:**
+- LLMGateway protocol satisfied ✅
+- Successful completion with parsed JSON ✅
+- Structured output with schema ✅
+- Timeout → LLMError ✅
+- Rate limit (429) → LLMError ✅
+- Server error (5xx) → LLMError ✅
+- Bad request (400) → LLMError (no retry) ✅
+- Malformed response → LLMMalformedResponseError ✅
+- Retry exhaustion → LLMError ✅
+- Retry then success → recovered ✅
+- Non-JSON content → raw string ✅
+- Close cleans up ✅
+- Context manager works ✅
