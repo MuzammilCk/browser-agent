@@ -37,6 +37,7 @@ from app.agent.field_mapper_models import (
 )
 from app.agent.registry import ReferenceRegistry, get_registry
 from app.llm.base import LLMGateway
+from app.llm.sanitizer import PromptSanitizer
 from app.models.page_state import ElementState, PageObservation, PageState
 
 logger = logging.getLogger(__name__)
@@ -360,6 +361,7 @@ class FieldMapper:
         self._llm = llm_gateway
         self._registry = registry or get_registry()
         self._rules = DETERMINISTIC_RULES
+        self._sanitizer = PromptSanitizer()
 
     def _get_field_text(self, element: ElementState) -> str:
         """Collect all text signals from an element for matching."""
@@ -585,6 +587,9 @@ Return mappings for each field ref. If a field cannot be mapped, set binding to 
                     "group": el.group_label or "",
                     "help_text": el.help_text or "",
                 })
+
+        # Sanitize all candidate info before sending to LLM
+        candidate_info = self._sanitizer.sanitize_elements(candidate_info)
 
         if not candidate_info:
             return []

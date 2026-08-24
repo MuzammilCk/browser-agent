@@ -48,3 +48,8 @@ tests/real_sites/screenshots/
 *.log
 .cache/
 .pytest_cache/
+
+# Installed skills
+.agents/
+.claude/
+skills-lock.json
