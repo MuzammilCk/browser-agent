@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Failure Injection — Click</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 0.5rem; }
+        .result { margin-top: 1rem; padding: 1rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; display: none; }
+        .toggled { background: #dbeafe; border-color: #93c5fd; }
+    </style>
+</head>
+<body>
+    <h1>Failure Injection Test — Click</h1>
+
+    <!-- Test 1: Button that does nothing -->
+    <div class="form-group">
+        <button type="button" id="btn-noop">No-Op Button (does nothing)</button>
+    </div>
+
+    <!-- Test 2: Button that shows an alert dialog -->
+    <div class="form-group">
+        <button type="button" id="btn-alert" onclick="alert('This is a test alert')">Alert Button</button>
+    </div>
+
+    <!-- Test 3: Toggle button that changes its own state -->
+    <div class="form-group">
+        <button type="button" id="btn-toggle" onclick="this.classList.toggle('toggled')">Toggle Button</button>
+    </div>
+
+    <!-- Test 4: Button that adds new elements to the page -->
+    <div class="form-group">
+        <button type="button" id="btn-add-elements" onclick="addNewFields()">Add New Fields</button>
+    </div>
+    <div id="new-elements-area"></div>
+
+    <!-- Test 5: Button that changes page title -->
+    <div class="form-group">
+        <button type="button" id="btn-change-title" onclick="document.title = 'Title Changed'">Change Title</button>
+    </div>
+
+    <!-- Test 6: Normal button (control) -->
+    <div class="form-group">
+        <button type="button" id="btn-normal" onclick="document.getElementById('result').style.display='block'">Normal Button</button>
+    </div>
+    <div class="result" id="result">Button was clicked successfully</div>
+
+    <script>
+        function addNewFields() {
+            const area = document.getElementById('new-elements-area');
+            area.innerHTML = `
+                <div class="form-group">
+                    <label for="new-field-1">New Field 1</label>
+                    <input type="text" id="new-field-1" name="new-field-1">
+                </div>
+                <div class="form-group">
+                    <label for="new-field-2">New Field 2</label>
+                    <input type="text" id="new-field-2" name="new-field-2">
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

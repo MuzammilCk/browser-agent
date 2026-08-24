@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Failure Injection — Fill</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        .error { color: red; font-size: 0.875rem; margin-top: 0.25rem; display: none; }
+        input[aria-invalid="true"] { border-color: red; }
+        .hidden { display: none; }
+        button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 0.5rem; }
+    </style>
+</head>
+<body>
+    <h1>Failure Injection Test — Fill</h1>
+    <form id="failureForm">
+        <!-- Test 1: Field that disappears after typing "REMOVE" -->
+        <div class="form-group" id="disappearingGroup">
+            <label for="disappearing">Type "REMOVE" to make this field disappear</label>
+            <input type="text" id="disappearing" name="disappearing">
+        </div>
+
+        <!-- Test 2: Field that becomes disabled after typing "LOCK" -->
+        <div class="form-group">
+            <label for="locking">Type "LOCK" to disable this field</label>
+            <input type="text" id="locking" name="locking">
+        </div>
+
+        <!-- Test 3: Field that shows validation error after typing "ERROR" -->
+        <div class="form-group">
+            <label for="validating">Type "ERROR" to trigger validation</label>
+            <input type="text" id="validating" name="validating" aria-invalid="false">
+            <div class="error" id="validating-error" role="alert">
+                Invalid input detected
+            </div>
+        </div>
+
+        <!-- Test 4: Normal field (control) -->
+        <div class="form-group">
+            <label for="normal">Normal field (no side effects)</label>
+            <input type="text" id="normal" name="normal">
+        </div>
+
+        <button type="button" id="btn-remove" onclick="removeField()">Remove Field</button>
+        <button type="button" id="btn-lock" onclick="lockField()">Lock Field</button>
+        <button type="button" id="btn-error" onclick="showError()">Show Error</button>
+    </form>
+
+    <script>
+        document.getElementById('disappearing').addEventListener('input', function() {
+            if (this.value === 'REMOVE') {
+                document.getElementById('disappearingGroup').style.display = 'none';
+            }
+        });
+
+        document.getElementById('locking').addEventListener('input', function() {
+            if (this.value === 'LOCK') {
+                this.disabled = true;
+            }
+        });
+
+        document.getElementById('validating').addEventListener('input', function() {
+            if (this.value === 'ERROR') {
+                this.setAttribute('aria-invalid', 'true');
+                document.getElementById('validating-error').style.display = 'block';
+            } else {
+                this.setAttribute('aria-invalid', 'false');
+                document.getElementById('validating-error').style.display = 'none';
+            }
+        });
+
+        function removeField() {
+            document.getElementById('disappearingGroup').style.display = 'none';
+        }
+        function lockField() {
+            document.getElementById('locking').disabled = true;
+        }
+        function showError() {
+            const el = document.getElementById('validating');
+            el.setAttribute('aria-invalid', 'true');
+            document.getElementById('validating-error').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

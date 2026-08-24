@@ -75,6 +75,12 @@ EXTRACT_ELEMENTS_JS = """
         }
 
         // For inputs, accessible name can come from label
+        // For buttons/links, accessible name is the text content
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'button' || tag === 'a') {
+            const text = el.textContent.trim();
+            if (text) return text;
+        }
         return findLabel(el) || '';
     }
 

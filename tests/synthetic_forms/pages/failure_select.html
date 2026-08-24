@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Failure Injection — Select</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        select, input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Failure Injection Test — Select</h1>
+
+    <!-- Test 1: Category → dependent subcategory that changes -->
+    <div class="form-group">
+        <label for="category">Category</label>
+        <select id="category" name="category">
+            <option value="">-- Select --</option>
+            <option value="education">Education</option>
+            <option value="health">Health</option>
+            <option value="agriculture">Agriculture</option>
+        </select>
+    </div>
+    <div class="form-group" id="subcategory-group" style="display:none;">
+        <label for="subcategory">Subcategory</label>
+        <select id="subcategory" name="subcategory">
+            <option value="">-- Select --</option>
+        </select>
+    </div>
+
+    <!-- Test 2: Select that triggers new text field -->
+    <div class="form-group">
+        <label for="reason">Reason</label>
+        <select id="reason" name="reason">
+            <option value="">-- Select --</option>
+            <option value="other">Other (specify)</option>
+            <option value="general">General</option>
+        </select>
+    </div>
+    <div class="form-group hidden" id="reason-text-group">
+        <label for="reason-text">Specify Reason</label>
+        <input type="text" id="reason-text" name="reason-text">
+    </div>
+
+    <!-- Test 3: Select with wrong option (should fail) -->
+    <div class="form-group">
+        <label for="limited">Limited Options</label>
+        <select id="limited" name="limited">
+            <option value="a">Option A</option>
+            <option value="b">Option B</option>
+        </select>
+    </div>
+
+    <script>
+        const subcategories = {
+            education: ['School', 'College', 'University'],
+            health: ['Hospital', 'Clinic', 'Pharmacy'],
+            agriculture: ['Farm', 'Dairy', 'Fishery']
+        };
+
+        document.getElementById('category').addEventListener('change', function() {
+            const subGroup = document.getElementById('subcategory-group');
+            const subSelect = document.getElementById('subcategory');
+
+            if (this.value && subcategories[this.value]) {
+                subGroup.style.display = 'block';
+                subSelect.innerHTML = '<option value="">-- Select --</option>';
+                for (const sub of subcategories[this.value]) {
+                    const opt = document.createElement('option');
+                    opt.value = sub.toLowerCase();
+                    opt.textContent = sub;
+                    subSelect.appendChild(opt);
+                }
+            } else {
+                subGroup.style.display = 'none';
+            }
+        });
+
+        document.getElementById('reason').addEventListener('change', function() {
+            const textGroup = document.getElementById('reason-text-group');
+            if (this.value === 'other') {
+                textGroup.classList.remove('hidden');
+            } else {
+                textGroup.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

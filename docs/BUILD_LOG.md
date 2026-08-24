@@ -186,6 +186,45 @@
 - ValueResolver keeps sensitive user data out of LLM context
 - Action validation rejects invalid field combinations at Pydantic level
 
+### [Phase 3] Verification Engine — 2026-08-24
+
+**What was done:**
+- Enhanced ActionVerifier with live Playwright DOM queries for ground-truth verification
+- Added live value reading for fill verification (not just PageState comparison)
+- Enhanced click verification (dialog detection, new elements, title change, element state)
+- Enhanced select verification (dependent field detection, option matching)
+- Added upload verification via live DOM file input check
+- Added scroll_to verification
+- Created 3 failure injection synthetic pages (fill, click, select)
+- Wrote 13 failure injection tests proving detection works
+- Fixed DOM extraction to capture button/link text as accessible_name
+
+**Files created/modified:**
+- `app/browser/verification.py` — Enhanced with live Playwright queries, helper methods
+- `app/browser/dom.py` — Added button/link text as accessible_name
+- `tests/synthetic_forms/pages/failure_fill.html` — Disappearing field, disabled field, validation trigger
+- `tests/synthetic_forms/pages/failure_click.html` — No-op, alert, toggle, add elements, change title
+- `tests/synthetic_forms/pages/failure_select.html` — Dependent dropdowns, trigger text field, invalid option
+- `tests/synthetic_forms/test_verification.py` — 13 failure injection tests
+
+**Tests run:**
+- `python -m pytest tests/ -v` — 90 passed in 89.48s
+
+**Verification:**
+- Fill: field disappears → FAILURE ✅
+- Fill: field disabled → FAILURE ✅
+- Fill: validation appears → FAILURE ✅
+- Fill: normal fill → SUCCESS ✅
+- Click: no-op → UNCERTAIN ✅
+- Click: new elements added → SUCCESS ✅
+- Click: title changed → SUCCESS ✅
+- Click: element toggled → SUCCESS/UNCERTAIN ✅
+- Select: dependent field appears → SUCCESS ✅
+- Select: invalid option → FAILURE ✅
+- Select: triggers new field → SUCCESS ✅
+- Re-observation after fill → verified ✅
+- Re-observation after select → verified ✅
+
 <!-- Example entry:
 
 ### [Phase 0.1] Repository bootstrap — 2024-08-24
