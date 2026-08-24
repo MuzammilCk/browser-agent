@@ -29,6 +29,7 @@ FIELD_SENSITIVITY: dict[str, SensitivityLevel] = {
     "date_of_birth": SensitivityLevel.SENSITIVE,  # Identity verification
     "gender": SensitivityLevel.PUBLIC,
     "nationality": SensitivityLevel.PUBLIC,
+    "age": SensitivityLevel.PUBLIC,
 
     # Contact
     "mobile": SensitivityLevel.SENSITIVE,  # PII
@@ -36,10 +37,12 @@ FIELD_SENSITIVITY: dict[str, SensitivityLevel] = {
 
     # Address
     "address": SensitivityLevel.INTERNAL,
+    "permanent_address": SensitivityLevel.INTERNAL,
     "state": SensitivityLevel.PUBLIC,
     "district": SensitivityLevel.PUBLIC,
     "block": SensitivityLevel.PUBLIC,
     "pincode": SensitivityLevel.PUBLIC,
+    "village": SensitivityLevel.PUBLIC,
 
     # Government IDs — always sensitive
     "aadhaar_number": SensitivityLevel.SENSITIVE,  # Government ID
@@ -61,6 +64,12 @@ FIELD_SENSITIVITY: dict[str, SensitivityLevel] = {
     "bank_name": SensitivityLevel.INTERNAL,
     "account_number": SensitivityLevel.SENSITIVE,  # Financial
     "ifsc_code": SensitivityLevel.INTERNAL,
+
+    # Family
+    "father_name": SensitivityLevel.PUBLIC,
+    "mother_name": SensitivityLevel.PUBLIC,
+    "spouse_name": SensitivityLevel.PUBLIC,
+    "guardian_name": SensitivityLevel.PUBLIC,
 
     # Category
     "category": SensitivityLevel.PUBLIC,

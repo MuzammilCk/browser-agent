@@ -1,20 +1,26 @@
 """Semantic field mapper — maps website form fields to user-data references.
 
-Phase 6 deliverables:
+Phase 6 + Phase A fixes:
 - Deterministic local matching (keyword/semantic rules)
-- LLM-based ambiguous resolution via OpenRouter
+- LLM-based resolution for ambiguous AND unmapped fields
 - Confidence scoring with three levels (HIGH/MEDIUM/LOW)
 - Evidence trail for audit
-- Distinction between semantically similar labels
+- ReferenceRegistry validation for all bindings
+- File input matching uses input_type, not role
+- Vault values NOT sent to LLM (only reference keys)
 
 Architecture:
     PageState
         ↓
     deterministic matching
         ↓
-    ambiguous candidates?
-        ├── NO → return FieldBinding
-        └── YES → LLM structured reasoning → FieldBinding
+    ambiguous + unmapped fields
+        ↓
+    LLM structured reasoning
+        ↓
+    ReferenceRegistry validation
+        ↓
+    FieldBinding
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ from app.agent.field_mapper_models import (
     MappingResult,
     MappingStrategy,
 )
+from app.agent.registry import ReferenceRegistry, get_registry
 from app.llm.base import LLMGateway
 from app.models.page_state import ElementState, PageObservation, PageState
 
@@ -40,6 +47,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 # Canonical binding → (keywords, field_types, confidence)
+# field_types match against BOTH role AND input_type
 # Keywords are matched against: label_text, accessible_name, html_name,
 # placeholder, section_heading, help_text, nearby_text
 DETERMINISTIC_RULES: dict[str, dict[str, Any]] = {
@@ -48,7 +56,7 @@ DETERMINISTIC_RULES: dict[str, dict[str, Any]] = {
         "keywords": [
             "full name", "applicant name", "name of applicant",
             "candidate name", "legal name", "name as per aadhaar",
-            "your name", "enter name", "name",
+            "your name", "enter name",
         ],
         "exclude_keywords": [
             "parent", "guardian", "spouse", "father", "mother",
@@ -200,7 +208,7 @@ DETERMINISTIC_RULES: dict[str, dict[str, Any]] = {
     },
     "USER.annual_income": {
         "keywords": [
-            "annual income", "income", "family income",
+            "annual income", "family income",
             "total income", "yearly income", "gross income",
             "income per annum",
         ],
@@ -222,7 +230,6 @@ DETERMINISTIC_RULES: dict[str, dict[str, Any]] = {
     "USER.father_name": {
         "keywords": [
             "father name", "father's name", "father",
-            "parent name", "guardian name",
         ],
         "exclude_keywords": ["mother", "spouse", "husband"],
         "field_types": ["textbox"],
@@ -245,6 +252,14 @@ DETERMINISTIC_RULES: dict[str, dict[str, Any]] = {
         "field_types": ["textbox"],
         "confidence": MappingConfidence.HIGH,
     },
+    "USER.guardian_name": {
+        "keywords": [
+            "guardian name", "guardian", "parent name",
+        ],
+        "exclude_keywords": ["father", "mother", "spouse"],
+        "field_types": ["textbox"],
+        "confidence": MappingConfidence.MEDIUM,
+    },
     # --- Financial ---
     "USER.bank_account": {
         "keywords": [
@@ -258,13 +273,14 @@ DETERMINISTIC_RULES: dict[str, dict[str, Any]] = {
     "USER.ifsc_code": {
         "keywords": [
             "ifsc", "ifsc code", "ifsc number",
-            "bank ifsc", "ifsc code",
+            "bank ifsc",
         ],
         "exclude_keywords": [],
         "field_types": ["textbox"],
         "confidence": MappingConfidence.HIGH,
     },
     # --- Documents ---
+    # Note: field_types includes "file" for input_type matching
     "DOCUMENT.aadhaar": {
         "keywords": [
             "aadhaar", "aadhaar document", "aadhaar card",
@@ -304,19 +320,45 @@ DETERMINISTIC_RULES: dict[str, dict[str, Any]] = {
 }
 
 
+def _element_matches_field_type(element: ElementState, field_types: list[str]) -> bool:
+    """Check if an element matches the expected field types.
+
+    Matches against BOTH role AND input_type per audit #4.
+    For file uploads, input_type='file' is the authoritative signal.
+    """
+    if not field_types:
+        return True
+
+    # Check role
+    if element.role and element.role in field_types:
+        return True
+
+    # Check input_type (critical for file inputs per audit #4)
+    if element.input_type and element.input_type in field_types:
+        return True
+
+    return False
+
+
 class FieldMapper:
     """Maps website form fields to user-data references.
 
     Uses a tiered approach:
     1. Deterministic local matching (fast, free)
-    2. LLM-based resolution for ambiguous cases (slower, costs tokens)
+    2. LLM-based resolution for ambiguous AND unmapped cases
+    3. ReferenceRegistry validation for all bindings
 
     The mapper distinguishes between semantically similar labels
     (e.g., "Applicant Name" vs "Father Name" vs "Spouse Name").
     """
 
-    def __init__(self, llm_gateway: LLMGateway | None = None) -> None:
+    def __init__(
+        self,
+        llm_gateway: LLMGateway | None = None,
+        registry: ReferenceRegistry | None = None,
+    ) -> None:
         self._llm = llm_gateway
+        self._registry = registry or get_registry()
         self._rules = DETERMINISTIC_RULES
 
     def _get_field_text(self, element: ElementState) -> str:
@@ -347,10 +389,9 @@ class FieldMapper:
         best_match: tuple[str, dict, float] | None = None
 
         for binding_key, rule in self._rules.items():
-            # Check if field type matches (if rule specifies types)
-            if rule["field_types"]:
-                if element.role and element.role not in rule["field_types"]:
-                    continue
+            # Check field type compatibility (role OR input_type)
+            if not _element_matches_field_type(element, rule["field_types"]):
+                continue
 
             # Check exclude keywords first
             if rule["exclude_keywords"]:
@@ -358,12 +399,9 @@ class FieldMapper:
                     continue
 
             # Score matching keywords
-            # Require longest matching keyword to be at least 4 chars
-            # to avoid false positives like "name" matching "Random Widget Name"
-            matched_keywords = []
-            for kw in rule["keywords"]:
-                if kw in text:
-                    matched_keywords.append(kw)
+            matched_keywords = [
+                kw for kw in rule["keywords"] if kw in text
+            ]
 
             if not matched_keywords:
                 continue
@@ -373,29 +411,24 @@ class FieldMapper:
             if not long_matches:
                 # Only short keywords matched (e.g., "name", "pin")
                 # Only accept if the keyword IS the entire accessible name
-                # e.g., accessible_name="Name" and keyword="name"
                 acc_name = (element.accessible_name or "").lower().strip()
                 dominant = any(kw == acc_name for kw in matched_keywords)
                 if not dominant:
                     continue
-                matched_keywords = [acc_name]  # Use the full accessible name
+                matched_keywords = [acc_name]
             else:
                 matched_keywords = long_matches
 
             # Calculate score using the BEST (longest) matching keyword
-            # Longer keywords = more specific = higher confidence
             best_kw = max(matched_keywords, key=len)
 
             # Exact match: keyword matches the full accessible name
             acc_name = (element.accessible_name or "").lower()
             if best_kw == acc_name or best_kw == text:
-                score = 1.0  # Perfect match
+                score = 1.0
             elif best_kw in acc_name:
-                # Keyword is a substring of the accessible name
-                # e.g., "full name" in "full name of applicant"
                 score = 0.6 + 0.2 * (len(best_kw) / max(len(acc_name), 1))
             else:
-                # Keyword matches in combined text but not in name alone
                 score = 0.3 + 0.1 * (len(best_kw) / max(len(text), 1))
 
             if best_match is None or score > best_match[2]:
@@ -405,6 +438,11 @@ class FieldMapper:
             return None
 
         binding_key, rule, score = best_match
+
+        # Validate against ReferenceRegistry
+        if not self._registry.validate(binding_key):
+            logger.warning("Deterministic match '%s' not in registry — skipping", binding_key)
+            return None
 
         # Determine confidence based on score and rule confidence
         if score >= 0.7:
@@ -436,38 +474,12 @@ class FieldMapper:
             field_label=element.accessible_name or element.label_text,
         )
 
-    async def _resolve_ambiguous(
-        self,
-        elements: list[ElementState],
-        candidates: list[FieldBinding],
-        vault_fields: dict[str, str],
-    ) -> list[FieldBinding]:
-        """Use LLM to resolve ambiguous field mappings.
+    def _build_llm_schema(self) -> dict:
+        """Build JSON schema for LLM structured output."""
+        all_refs = self._registry.get_all_refs(visible_only=True)
+        ref_list = "\n".join(f"  - {k} ({v})" for k, v in sorted(all_refs.items()))
 
-        Only called when deterministic matching produces MEDIUM/LOW confidence.
-        """
-        if self._llm is None:
-            logger.warning("No LLM gateway — cannot resolve ambiguous mappings")
-            return candidates
-
-        # Build prompt for LLM
-        elements_by_ref = {e.ref: e for e in elements}
-
-        candidate_info = []
-        for c in candidates:
-            el = elements_by_ref.get(c.field_ref)
-            if el:
-                candidate_info.append({
-                    "ref": c.field_ref,
-                    "label": el.accessible_name or el.label_text or el.html_name or "",
-                    "type": el.role or "unknown",
-                    "current_binding": c.binding,
-                    "current_confidence": c.confidence.value,
-                    "section": el.section_heading or "",
-                    "group": el.group_label or "",
-                })
-
-        schema = {
+        return {
             "type": "object",
             "properties": {
                 "mappings": {
@@ -490,8 +502,17 @@ class FieldMapper:
             "required": ["mappings"],
         }
 
+    def _build_llm_prompt(
+        self,
+        candidate_info: list[dict],
+    ) -> tuple[str, str]:
+        """Build system and user prompts for LLM resolution.
+
+        Per audit #42: sends reference KEYS only, not vault values.
+        """
+        all_refs = self._registry.get_all_refs(visible_only=True)
         available_fields = "\n".join(
-            f"- {k}" for k in sorted(vault_fields.keys())
+            f"  - {k} ({v})" for k, v in sorted(all_refs.items())
         )
 
         system_prompt = f"""You are a field mapping assistant for government form filling.
@@ -502,25 +523,74 @@ Available user-data references:
 {available_fields}
 
 RULES:
-1. Each field maps to exactly ONE user-data reference.
-2. Distinguish between semantically similar fields:
+1. Each field maps to exactly ONE user-data reference from the list above.
+2. Output ONLY references from the list above. Do NOT invent new references.
+3. Distinguish between semantically similar fields:
    - "Applicant Name" -> USER.full_name
    - "Father Name" -> USER.father_name
    - "Mother Name" -> USER.mother_name
    - "Spouse Name" -> USER.spouse_name
-   - "Guardian Name" -> USER.father_name (if father is guardian)
-3. For dropdowns, the binding represents what value to select.
-4. For file uploads, use DOCUMENT.* references.
-5. If uncertain, set confidence to "low".
-6. NEVER map authentication fields (password, OTP, CAPTCHA).
-7. NEVER map payment fields.
-8. Output ONLY valid JSON matching the schema."""
+   - "Guardian Name" -> USER.guardian_name (do NOT assume guardian = father)
+4. For dropdowns, the binding represents what value to select.
+5. For file uploads, use DOCUMENT.* references.
+6. If uncertain, set confidence to "low".
+7. NEVER map authentication fields (password, OTP, CAPTCHA).
+8. NEVER map payment fields.
+9. Output ONLY valid JSON matching the schema."""
 
         user_prompt = f"""Map these form fields to user-data references:
 
 {json.dumps(candidate_info, indent=2)}
 
 Return mappings for each field ref. If a field cannot be mapped, set binding to null and confidence to "none"."""
+
+        return system_prompt, user_prompt
+
+    def _validate_llm_binding(self, binding: str | None) -> bool:
+        """Validate an LLM-produced binding against ReferenceRegistry.
+
+        Per audit #11: LLM output is untrusted — always validate.
+        """
+        if not binding:
+            return False
+        return self._registry.validate(binding)
+
+    async def _resolve_with_llm(
+        self,
+        elements: list[ElementState],
+        field_refs: list[str],
+    ) -> list[FieldBinding]:
+        """Use LLM to resolve field mappings for ambiguous AND unmapped fields.
+
+        Per audit #8: unmapped fields are also sent to LLM.
+        Per audit #42: only reference keys are sent, not vault values.
+        Per audit #11: LLM output is validated against ReferenceRegistry.
+        """
+        if self._llm is None:
+            logger.warning("No LLM gateway — cannot resolve mappings")
+            return []
+
+        elements_by_ref = {e.ref: e for e in elements}
+
+        candidate_info = []
+        for ref in field_refs:
+            el = elements_by_ref.get(ref)
+            if el:
+                candidate_info.append({
+                    "ref": ref,
+                    "label": el.accessible_name or el.label_text or el.html_name or "",
+                    "type": el.role or "unknown",
+                    "input_type": el.input_type or "",
+                    "section": el.section_heading or "",
+                    "group": el.group_label or "",
+                    "help_text": el.help_text or "",
+                })
+
+        if not candidate_info:
+            return []
+
+        schema = self._build_llm_schema()
+        system_prompt, user_prompt = self._build_llm_prompt(candidate_info)
 
         try:
             response = await self._llm.complete(
@@ -530,53 +600,65 @@ Return mappings for each field ref. If a field cannot be mapped, set binding to 
                 temperature=0.0,
             )
 
+            bindings = []
             if response.parsed and "mappings" in response.parsed:
-                llm_mappings = response.parsed["mappings"]
+                for mapping in response.parsed["mappings"]:
+                    ref = mapping.get("ref", "")
+                    raw_binding = mapping.get("binding")
 
-                # Merge LLM results into candidates
-                updated = []
-                for c in candidates:
-                    llm_match = next(
-                        (m for m in llm_mappings if m.get("ref") == c.field_ref),
-                        None,
-                    )
-                    if llm_match and llm_match.get("binding"):
-                        c.binding = llm_match["binding"]
-                        c.confidence = MappingConfidence(
-                            llm_match.get("confidence", "medium")
+                    # Per audit #11: validate against registry
+                    if not self._validate_llm_binding(raw_binding):
+                        logger.warning(
+                            "LLM produced invalid binding '%s' for ref '%s' — rejecting",
+                            raw_binding, ref,
                         )
-                        c.strategy = MappingStrategy.LLM
-                        if llm_match.get("reasoning"):
-                            c.evidence.append(
-                                f"llm_reasoning: {llm_match['reasoning']}"
-                            )
-                    updated.append(c)
-                return updated
+                        continue
+
+                    confidence_str = mapping.get("confidence", "medium")
+                    try:
+                        confidence = MappingConfidence(confidence_str)
+                    except ValueError:
+                        confidence = MappingConfidence.MEDIUM
+
+                    evidence = [f"accessible_name='{elements_by_ref[ref].accessible_name}'"]
+                    if mapping.get("reasoning"):
+                        evidence.append(f"llm_reasoning: {mapping['reasoning']}")
+
+                    bindings.append(FieldBinding(
+                        field_ref=ref,
+                        binding=raw_binding,
+                        confidence=confidence,
+                        strategy=MappingStrategy.LLM,
+                        evidence=evidence,
+                        field_type=elements_by_ref[ref].role,
+                        field_label=elements_by_ref[ref].accessible_name,
+                    ))
+
+            return bindings
 
         except Exception as e:
             logger.warning("LLM resolution failed: %s", e)
-
-        return candidates
+            return []
 
     async def map_fields(
         self,
         observation: PageObservation,
-        vault_fields: dict[str, str] | None = None,
     ) -> MappingResult:
         """Map all interactive elements on a page to user-data references.
 
+        Per audit #42: does NOT accept vault values — only uses reference keys.
+        Per audit #8: unmapped fields are sent to LLM.
+        Per audit #12: bindings include observation_id.
+
         Args:
             observation: Current page observation
-            vault_fields: Available vault fields (e.g., {"USER.full_name": "John Doe"})
 
         Returns:
             MappingResult with all bindings
         """
         page_state = observation.page_state
         elements = page_state.elements
-
-        if vault_fields is None:
-            vault_fields = {}
+        obs_id = observation.observation_id
 
         # Phase 1: Deterministic matching
         bindings: list[FieldBinding] = []
@@ -607,15 +689,38 @@ Return mappings for each field ref. If a field cannot be mapped, set binding to 
             else:
                 bindings.append(binding)
 
-        # Phase 2: LLM resolution for ambiguous fields
-        if ambiguous and self._llm is not None:
-            ambiguous_bindings = [b for b in bindings if b.field_ref in ambiguous]
-            resolved = await self._resolve_ambiguous(
-                elements, ambiguous_bindings, vault_fields
-            )
-            # Replace ambiguous bindings with resolved ones
-            non_ambiguous = [b for b in bindings if b.field_ref not in ambiguous]
-            bindings = non_ambiguous + resolved
+        # Phase 2: LLM resolution for ambiguous + unmapped fields
+        llm_refs = ambiguous + unmapped
+        if llm_refs and self._llm is not None:
+            llm_bindings = await self._resolve_with_llm(elements, llm_refs)
+
+            # Replace ambiguous bindings with LLM-resolved ones
+            llm_by_ref = {b.field_ref: b for b in llm_bindings}
+
+            updated_bindings = []
+            for b in bindings:
+                if b.field_ref in llm_by_ref:
+                    updated_bindings.append(llm_by_ref[b.field_ref])
+                else:
+                    updated_bindings.append(b)
+
+            # Add new LLM bindings for previously unmapped fields
+            for ref in unmapped:
+                if ref in llm_by_ref:
+                    updated_bindings.append(llm_by_ref[ref])
+
+            bindings = updated_bindings
+
+        # Set observation_id on all bindings (per audit #12)
+        for b in bindings:
+            b.observation_id = obs_id
+
+        # Recalculate unmapped (fields with no binding at all)
+        bound_refs = {b.field_ref for b in bindings}
+        final_unmapped = [
+            ref for ref in unmapped
+            if ref not in bound_refs
+        ]
 
         # Count strategies
         strategy_counts: dict[str, int] = {}
@@ -634,7 +739,7 @@ Return mappings for each field ref. If a field cannot be mapped, set binding to 
 
         return MappingResult(
             bindings=bindings,
-            unmapped_fields=unmapped,
+            unmapped_fields=final_unmapped,
             ambiguous_fields=final_ambiguous,
             total_fields=len(elements),
             mapped_count=mapped_count,

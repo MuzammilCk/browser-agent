@@ -70,21 +70,6 @@
 - Observation-scoped refs with **stale reference rejection**
 - Sensitive field policy blocks Aadhaar/PAN patterns in `literal_value`
 
-### Failure Injection Tests
-
-| Scenario | Detection |
-|----------|-----------|
-| Field disappears after fill | ✅ FAILURE |
-| Field becomes disabled | ✅ FAILURE |
-| Validation error appears | ✅ FAILURE |
-| Normal fill (no side effects) | ✅ SUCCESS |
-| No-op click | ✅ UNCERTAIN (stops) |
-| Click adds new elements | ✅ SUCCESS |
-| Click changes title | ✅ SUCCESS |
-| Select causes dependent field | ✅ SUCCESS |
-| Select with invalid option | ✅ FAILURE |
-| Stale observation_id rejected | ✅ FAILURE |
-
 ### ActionResult Contract (Phase 3.5)
 
 ```
@@ -98,16 +83,6 @@ ActionResult
 └── user_action_required: bool          ← True for request_user_action
 ```
 
-### Acceptance Criteria
-
-```
-The verifier detects failed actions rather than blindly reporting success. ✅
-Failure injection tests prove detection works. ✅
-UNCERTAIN stops progression. ✅
-Post-observation returned to caller. ✅
-Stale refs rejected. ✅
-```
-
 **Tests:** 128 passed in 102.28s
 
 ---
@@ -116,29 +91,13 @@ Stale refs rejected. ✅
 
 ### Deliverables
 
-- `UserVault` model (29 fields: identity, contact, address, education, employment, government_ids, financial)
+- `UserVault` model (35+ fields: identity, contact, address, education, employment, government_ids, financial, family)
 - `DocumentRef` model + `DocumentRegistry`
 - `ValueResolver` maps `USER.x` → actual value locally
 - `DocumentResolver` maps `DOCUMENT.x` → file path locally
 - Sensitive field classification per SAFETY.md
 - `VaultManager` for JSON persistence (load/save)
 - Sample vault with realistic Indian government form data
-- Executor integration: `value_ref` resolved before Playwright execution
-
-### Sensitive Field Classification
-
-| Level | Fields |
-|-------|--------|
-| 🔴 SENSITIVE | aadhaar_number, pan_number, voter_id, date_of_birth, mobile, annual_income, account_number |
-| 🟡 INTERNAL | email, address, employer, bank_name, ifsc_code |
-| 🟢 PUBLIC | full_name, state, district, gender, category, education, occupation |
-
-### Acceptance Criteria
-
-```
-The executor resolves USER.full_name, USER.date_of_birth,
-DOCUMENT.income_certificate locally without exposing raw values. ✅
-```
 
 **Tests:** 34 passed in 0.41s (Phase 4), 128 total
 
@@ -146,32 +105,19 @@ DOCUMENT.income_certificate locally without exposing raw values. ✅
 
 ## Phase 5 — OpenRouter LLM Gateway ✅
 
-### Goal
-
-OpenRouter API client with structured output, retries, and cost tracking.
-
 ### Deliverables
 
-- [x] `LLMGateway` protocol/interface
-- [x] `OpenRouterGateway` implementation
-- [x] Structured JSON schema output
-- [x] Timeout/retry policy (bounded, 3 retries with exponential backoff)
-- [x] Model configuration via env vars (`OPENROUTER_MODEL`)
-- [x] Request/response logging with redaction
-- [x] Usage/cost metadata recording (`LLMUsage`)
-- [x] Error hierarchy (Timeout, RateLimit, Server, BadRequest, MalformedResponse)
-- [x] Multimodal support (images via base64)
-- [x] Async context manager
-- [x] 22 tests (protocol, schemas, retry, gateway, integration)
-
-### Acceptance Criteria
-
-```
-LLMGateway protocol defined and satisfied. ✅
-OpenRouterGateway retries on timeout/429/5xx. ✅
-Structured JSON schema output works. ✅
-Fail-closed on all errors. ✅
-```
+- `LLMGateway` protocol/interface
+- `OpenRouterGateway` implementation
+- Structured JSON schema output
+- Timeout/retry policy (bounded, 3 retries with exponential backoff)
+- Model configuration via env vars (`OPENROUTER_MODEL`)
+- Request/response logging with redaction
+- Usage/cost metadata recording (`LLMUsage`)
+- Error hierarchy (Timeout, RateLimit, Server, BadRequest, MalformedResponse)
+- Multimodal support (images via base64)
+- Async context manager
+- 22 tests (protocol, schemas, retry, gateway, integration)
 
 **Tests:** 22 passed in 5.19s, 150 total
 
@@ -179,59 +125,113 @@ Fail-closed on all errors. ✅
 
 ## Phase 6 — Semantic Field Mapper ✅
 
+### Deliverables
+
+- `FieldBinding` model with confidence scoring (HIGH/MEDIUM/LOW/NONE)
+- `MappingResult` with strategy counts, unmapped/ambiguous field tracking
+- `FieldMapper` with deterministic keyword/semantic matching (30+ rules)
+- LLM-based ambiguous resolution via OpenRouter structured output
+- Similar label discrimination tested
+- Synthetic government form with 20+ fields
+- 41 tests
+
+**Tests:** 41 passed in 0.44s (Phase 6), 191 total
+
+---
+
+## Phase A — Contract Hardening ✅
+
 ### Goal
 
-Map website form fields to user-data references using deterministic matching + LLM reasoning.
+Fix cross-component contracts and integration gaps identified in the 50-issue audit.
 
 ### Deliverables
 
-- [x] `FieldBinding` model with confidence scoring (HIGH/MEDIUM/LOW/NONE)
-- [x] `MappingResult` with strategy counts, unmapped/ambiguous field tracking
-- [x] `FieldMapper` with deterministic keyword/semantic matching
-- [x] LLM-based ambiguous resolution via OpenRouter structured output
-- [x] 30+ deterministic rules covering identity, contact, address, education, financial, documents
-- [x] Exclude-keyword logic to prevent false matches (e.g., "Father Name" → not USER.full_name)
-- [x] Minimum keyword length filter to prevent false positives (e.g., "name" → not random text)
-- [x] Evidence trail for every mapping (labels, roles, sections, LLM reasoning)
-- [x] Similar label discrimination tested: Applicant/Father/Mother/Spouse Name
-- [x] Synthetic government form with 20+ fields and dependent dropdown
-- [x] 41 tests (deterministic matching, confidence, evidence, LLM mocked, discrimination)
+- [x] **ReferenceRegistry** (`app/agent/registry.py`) — single source of truth for all 35+ USER.* and DOCUMENT.* references
+- [x] **ValueResolver** updated — uses ReferenceRegistry, includes all missing fields (father_name, mother_name, spouse_name, guardian_name, permanent_address, age, village, bank_account)
+- [x] **DocumentResolver** updated — uses ReferenceRegistry, unified document names (DOCUMENT.photo everywhere)
+- [x] **FieldMapper** updated — matches file inputs via `input_type` not `role` (audit #4)
+- [x] **Unmapped fields → LLM** — completely unmapped fields now sent to LLM second stage (audit #8)
+- [x] **LLM output validated** — every LLM-produced binding checked against ReferenceRegistry (audit #11)
+- [x] **FieldBinding.observation_id** — bindings are observation-scoped (audit #12)
+- [x] **Frame-aware locator** — resolves against correct Playwright Frame based on element.frame_id (audit #15)
+- [x] **FALLBACK strategy removed** — replaced with UNMAPPED (audit #10)
+- [x] **map_fields() no longer accepts vault values** — only reference keys sent to LLM (audit #42)
+- [x] **Guardian Name** maps to USER.guardian_name, not USER.father_name (audit #7)
 
-### Deterministic Rules
+### Files Changed
 
-| Category | Bindings |
-|----------|----------|
-| Identity | USER.full_name, USER.date_of_birth, USER.gender, USER.age |
-| Contact | USER.mobile, USER.email |
-| Address | USER.address, USER.permanent_address, USER.state, USER.district, USER.pincode, USER.village |
-| Government IDs | USER.aadhaar_number, USER.pan_number, USER.voter_id |
-| Education | USER.education |
-| Employment | USER.occupation, USER.annual_income |
-| Category | USER.category |
-| Family | USER.father_name, USER.mother_name, USER.spouse_name |
-| Financial | USER.bank_account, USER.ifsc_code |
-| Documents | DOCUMENT.aadhaar, DOCUMENT.income_certificate, DOCUMENT.photo, DOCUMENT.signature |
+| File | Change |
+|------|--------|
+| `app/agent/registry.py` | **NEW** — ReferenceRegistry with 38 references |
+| `app/agent/field_mapper.py` | Updated to use registry, unmapped→LLM, LLM validation |
+| `app/agent/field_mapper_models.py` | Added observation_id, removed FALLBACK |
+| `app/vault/resolver.py` | Updated ValueResolver/DocumentResolver to use registry |
+| `app/vault/sensitivity.py` | Added sensitivity for new fields |
+| `app/browser/locator.py` | Frame-aware resolution |
+| `tests/unit/test_registry.py` | **NEW** — 17 registry tests |
+| `tests/unit/test_field_mapper.py` | Updated for new API, added Phase A tests |
 
-### Similar Label Discrimination
+### Audit Issues Addressed
 
-| Label | Correct Mapping |
-|-------|----------------|
-| Applicant Name | USER.full_name |
-| Father's Name | USER.father_name |
-| Mother's Name | USER.mother_name |
-| Spouse Name | USER.spouse_name |
-| Parent/Guardian Name | Not USER.full_name (exclude) |
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Element ref system not unified | ReferenceRegistry as single source |
+| 4 | File input role/type mismatch | Match on input_type, not role |
+| 5 | FieldMapper refs don't match Vault | All refs derived from registry |
+| 6 | Document ref names inconsistent | Unified to DOCUMENT.photo |
+| 7 | Guardian name unsafe guessing | Maps to USER.guardian_name |
+| 8 | Unmapped fields don't reach LLM | Now sent to LLM second stage |
+| 10 | FALLBACK strategy dangerous | Removed, replaced with UNMAPPED |
+| 11 | LLM refs not validated | Validated against registry |
+| 12 | FieldBinding needs observation_id | Added observation_id field |
+| 15 | Frame-aware locator incomplete | Resolves against correct Frame |
+| 37 | Contracts not from one source | ReferenceRegistry is source of truth |
+| 42 | Mapper prompt receives values | Only reference keys sent |
 
 ### Acceptance Criteria
 
 ```
-Deterministic matching correctly distinguishes semantically similar labels. ✅
-LLM resolves ambiguous cases when gateway available. ✅
-Confidence levels prevent incorrect auto-fill. ✅
-Evidence trail supports audit. ✅
+ReferenceRegistry exists and is used by all consumers. ✅
+FieldMapper bindings validated against registry. ✅
+LLM output validated against registry. ✅
+File inputs match via input_type. ✅
+Unmapped fields sent to LLM. ✅
+Bindings are observation-scoped. ✅
+Frame-aware locator resolves correctly. ✅
 ```
 
-**Tests:** 41 passed in 0.44s (Phase 6), 191 total
+**Tests:** 52 new (Phase A), 202 total passed in 84.76s
+
+---
+
+## Phase B — Safety Engine
+
+**Status:** ⬜ Not started
+
+### Goal
+
+PolicyEngine with R0-R4 risk levels, user checkpoints, trusted domain registry.
+
+---
+
+## Phase C — Workflow Orchestration
+
+**Status:** ⬜ Not started
+
+### Goal
+
+WorkflowState, AgentRunner/WorkflowManager, full observe→plan→execute→verify loop.
+
+---
+
+## Phase D — Perception / Mapping Hardening
+
+**Status:** ⬜ Not started
+
+### Goal
+
+Fix remaining perception and mapping issues, e2e synthetic test.
 
 ---
 

@@ -1,9 +1,13 @@
-"""Field binding model — maps website fields to user-data references.
+"""Field binding model — maps website form fields to user-data references.
 
 Phase 6 deliverables:
 - FieldBinding with confidence scoring
 - Mapping strategy tracking (deterministic vs LLM)
 - Evidence trail for audit
+
+Audit fixes:
+- #12/#29: Added observation_id for observation-scoped ownership
+- #10: Removed FALLBACK strategy (too dangerous for government forms)
 """
 
 from __future__ import annotations
@@ -23,12 +27,16 @@ class MappingConfidence(str, Enum):
 
 
 class MappingStrategy(str, Enum):
-    """How the mapping was determined."""
+    """How the mapping was determined.
+
+    FALLBACK removed per audit #10 — government form mappings
+    must never be guessed. If uncertain, use UNMAPPED.
+    """
 
     DETERMINISTIC = "deterministic"    # Local keyword/semantic rules
     LLM = "llm"                        # OpenRouter structured reasoning
     MANUAL = "manual"                  # User-provided mapping
-    FALLBACK = "fallback"              # Best guess when nothing else works
+    UNMAPPED = "unmapped"              # Could not be mapped
 
 
 class FieldBinding(BaseModel):
@@ -39,6 +47,7 @@ class FieldBinding(BaseModel):
         binding = "USER.full_name"
         confidence = MappingConfidence.HIGH
         strategy = MappingStrategy.DETERMINISTIC
+        observation_id = "obs_42"
     """
 
     field_ref: str = Field(
@@ -79,6 +88,10 @@ class FieldBinding(BaseModel):
     field_label: str | None = Field(
         default=None,
         description="The actual label/name of the field on the page",
+    )
+    observation_id: str | None = Field(
+        default=None,
+        description="Observation ID this binding belongs to (for stale ref prevention)",
     )
 
 

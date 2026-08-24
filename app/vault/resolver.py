@@ -1,8 +1,8 @@
 """Value resolver and document resolver.
 
-Per audit #9 and #10:
-- LLM emits value_ref like "USER.full_name" — resolver resolves locally
-- LLM emits document_ref like "DOCUMENT.aadhaar" — resolver resolves locally
+Uses ReferenceRegistry as single source of truth per audit #5, #6, #37.
+- LLM emits value_ref like "USER.full_name" → resolver resolves locally
+- LLM emits document_ref like "DOCUMENT.aadhaar" → resolver resolves locally
 - Sensitive values are never sent through the LLM
 """
 
@@ -14,11 +14,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.agent.registry import ReferenceRegistry, ReferenceSensitivity, get_registry
+
 logger = logging.getLogger(__name__)
 
 
 class UserVault(BaseModel):
-    """Typed user data model with semantic references."""
+    """Typed user data model with semantic references.
+
+    Must stay in sync with ReferenceRegistry _USER_REFS.
+    """
 
     # Identity
     full_name: str = ""
@@ -27,6 +32,7 @@ class UserVault(BaseModel):
     date_of_birth: str = ""
     gender: str = ""
     nationality: str = ""
+    age: str = ""
 
     # Contact
     mobile: str = ""
@@ -34,9 +40,11 @@ class UserVault(BaseModel):
 
     # Address
     address: str = ""
+    permanent_address: str = ""
     state: str = ""
     district: str = ""
     block: str = ""
+    village: str = ""
     pincode: str = ""
 
     # Government IDs
@@ -59,6 +67,12 @@ class UserVault(BaseModel):
     bank_name: str = ""
     account_number: str = ""
     ifsc_code: str = ""
+
+    # Family
+    father_name: str = ""
+    mother_name: str = ""
+    spouse_name: str = ""
+    guardian_name: str = ""
 
     # Category
     category: str = ""
@@ -96,46 +110,26 @@ class DocumentRegistry:
 class ValueResolver:
     """Resolves semantic value references to actual values.
 
+    Uses ReferenceRegistry as single source of truth.
     LLM emits: {"value_ref": "USER.full_name"}
     Resolver maps: "USER.full_name" -> "Rahul Sharma"
 
     This keeps sensitive values out of the LLM context.
     """
 
-    # Allowed reference prefixes and their target attributes
-    USER_FIELDS = {
-        "USER.full_name": "full_name",
-        "USER.first_name": "first_name",
-        "USER.last_name": "last_name",
-        "USER.date_of_birth": "date_of_birth",
-        "USER.gender": "gender",
-        "USER.nationality": "nationality",
-        "USER.mobile": "mobile",
-        "USER.email": "email",
-        "USER.address": "address",
-        "USER.state": "state",
-        "USER.district": "district",
-        "USER.block": "block",
-        "USER.pincode": "pincode",
-        "USER.aadhaar_name": "aadhaar_name",
-        "USER.pan_number": "pan_number",
-        "USER.voter_id": "voter_id",
-        "USER.education": "education",
-        "USER.degree": "degree",
-        "USER.institution": "institution",
-        "USER.occupation": "occupation",
-        "USER.employer": "employer",
-        "USER.annual_income": "annual_income",
-        "USER.bank_name": "bank_name",
-        "USER.account_number": "account_number",
-        "USER.ifsc_code": "ifsc_code",
-        "USER.category": "category",
-        "USER.religion": "religion",
-        "USER.marital_status": "marital_status",
-    }
-
-    def __init__(self, vault: UserVault) -> None:
+    def __init__(
+        self,
+        vault: UserVault,
+        registry: ReferenceRegistry | None = None,
+    ) -> None:
         self._vault = vault
+        self._registry = registry or get_registry()
+        # Build lookup from registry
+        self._user_fields: dict[str, str] = {}
+        for key in self._registry.list_keys():
+            attr = self._registry.get_vault_attribute(key)
+            if attr and key.startswith("USER."):
+                self._user_fields[key] = attr
 
     def resolve(self, value_ref: str) -> str | None:
         """Resolve a USER.x reference to its actual value.
@@ -149,9 +143,14 @@ class ValueResolver:
             logger.warning("Invalid value_ref prefix: %s", value_ref)
             return None
 
-        field_attr = self.USER_FIELDS.get(value_ref)
+        # Validate against registry
+        if not self._registry.validate(value_ref):
+            logger.warning("Unknown value_ref (not in registry): %s", value_ref)
+            return None
+
+        field_attr = self._user_fields.get(value_ref)
         if field_attr is None:
-            logger.warning("Unknown value_ref: %s", value_ref)
+            logger.warning("No vault attribute for: %s", value_ref)
             return None
 
         value = getattr(self._vault, field_attr, None)
@@ -163,40 +162,51 @@ class ValueResolver:
 
     def is_valid_ref(self, value_ref: str) -> bool:
         """Check if a value reference is valid."""
-        return value_ref in self.USER_FIELDS
+        return self._registry.validate(value_ref)
+
+    def can_resolve(self, value_ref: str) -> bool:
+        """Check if a value reference can be resolved (valid + has value)."""
+        return self.resolve(value_ref) is not None
 
 
 class DocumentResolver:
     """Resolves document references to local file paths.
 
-    LLM emits: {"document_ref": "DOCUMENT.income_certificate"}
+    Uses ReferenceRegistry as single source of truth.
+    LLM emits: {"document_ref": "DOCUMENT.aadhaar"}
     Resolver maps to actual file path.
     """
 
-    DOC_FIELDS = {
-        "DOCUMENT.aadhaar": "aadhaar",
-        "DOCUMENT.income_certificate": "income_certificate",
-        "DOCUMENT.degree_certificate": "degree_certificate",
-        "DOCUMENT.passport_photo": "passport_photo",
-        "DOCUMENT.signature": "signature",
-        "DOCUMENT.voter_id": "voter_id",
-        "DOCUMENT.pan_card": "pan_card",
-    }
-
-    def __init__(self, registry: DocumentRegistry) -> None:
-        self._registry = registry
+    def __init__(
+        self,
+        registry: DocumentRegistry | None = None,
+        ref_registry: ReferenceRegistry | None = None,
+    ) -> None:
+        self._doc_registry = registry or DocumentRegistry()
+        self._ref_registry = ref_registry or get_registry()
+        # Build lookup from registry
+        self._doc_fields: dict[str, str] = {}
+        for key in self._ref_registry.list_keys():
+            attr = self._ref_registry.get_vault_attribute(key)
+            if attr and key.startswith("DOCUMENT."):
+                self._doc_fields[key] = attr
 
     def resolve(self, document_ref: str) -> DocumentRef | None:
         """Resolve a DOCUMENT.x reference to a DocumentRef."""
         if not document_ref or not document_ref.startswith("DOCUMENT."):
             return None
 
-        doc_id = self.DOC_FIELDS.get(document_ref)
-        if doc_id is None:
-            logger.warning("Unknown document_ref: %s", document_ref)
+        # Validate against registry
+        if not self._ref_registry.validate(document_ref):
+            logger.warning("Unknown document_ref (not in registry): %s", document_ref)
             return None
 
-        doc = self._registry.resolve(doc_id)
+        doc_id = self._doc_fields.get(document_ref)
+        if doc_id is None:
+            logger.warning("No vault attribute for: %s", document_ref)
+            return None
+
+        doc = self._doc_registry.resolve(doc_id)
         if doc is None:
             logger.warning("Document not found: %s (ref=%s)", doc_id, document_ref)
             return None
@@ -210,4 +220,8 @@ class DocumentResolver:
 
     def is_valid_ref(self, document_ref: str) -> bool:
         """Check if a document reference is valid."""
-        return document_ref in self.DOC_FIELDS
+        return self._ref_registry.validate(document_ref)
+
+    def can_resolve(self, document_ref: str) -> bool:
+        """Check if a document reference can be resolved (valid + exists)."""
+        return self.resolve(document_ref) is not None
