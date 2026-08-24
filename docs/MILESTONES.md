@@ -312,13 +312,56 @@ Max iteration limit prevents infinite loops. ✅
 
 ---
 
-## Phase D — Perception / Mapping Hardening
-
-**Status:** ⬜ Not started
+## Phase D — E2E Synthetic Test + Contract Tests ✅
 
 ### Goal
 
-Fix remaining perception and mapping issues, e2e synthetic test.
+Prove the full agent loop works end-to-end with a synthetic government form.
+
+### Deliverables
+
+- [x] **Comprehensive synthetic government form** (`tests/synthetic_forms/pages/government_form.html`) — 31 fields across 5 sections
+- [x] **E2E field mapper test** — maps all 31 fields, validates against ReferenceRegistry
+- [x] **E2E agent loop test** — full observe→map→plan→execute→verify with mocked LLM
+- [x] **CAPTCHA detection test** — proves workflow pauses at authentication
+- [x] **Action recording test** — proves every action is recorded in WorkflowState
+- [x] **Contract tests** (7 tests): all refs in registry, all refs resolve, action schema, invalid actions rejected, sensitive value rejected, policy classifies all actions, auth blocks all actions
+- [x] **14 new tests**, 282 total
+
+### Synthetic Government Form Fields (31)
+
+| Section | Fields |
+|---------|--------|
+| Personal | Full Name, DOB, Father's Name, Mother's Name, Spouse Name, Gender, Category, Marital Status |
+| Contact | Mobile, Email, State, District (dependent), Village, Pincode, Address |
+| Education | Qualification, Occupation, Income, Aadhaar, PAN, Bank Account, IFSC |
+| Documents | Aadhaar upload, Income Certificate, Photo, Signature |
+| Declaration | Declaration checkbox, Terms checkbox |
+
+### Contract Tests Prove
+
+```
+Every FieldMapper binding exists in ReferenceRegistry. ✅
+Every USER.* reference resolves through ValueResolver. ✅
+All valid actions satisfy BrowserAction schema. ✅
+Invalid action combinations are rejected. ✅
+Sensitive patterns (Aadhaar/PAN) in literal_value are rejected. ✅
+PolicyEngine classifies every action type. ✅
+Authentication blocks all actions. ✅
+```
+
+### Acceptance Criteria
+
+```
+Synthetic form has 20+ fields. ✅
+Field mapper maps all fields correctly. ✅
+Full agent loop works with mocked LLM. ✅
+CAPTCHA causes workflow to pause. ✅
+All actions recorded in WorkflowState. ✅
+Contract tests pass. ✅
+```
+
+**Tests:** 14 new (Phase D), 282 total passed in 95.78s
 
 ---
 
