@@ -35,7 +35,11 @@ async def extract_aria_snapshot_with_refs(page: Page) -> str:
     """
     try:
         body = page.locator("body")
-        snapshot = await body.aria_snapshot(mode="ai", refs=True)
+        # Try refs=True first, fall back to mode="ai" if not supported
+        try:
+            snapshot = await body.aria_snapshot(mode="ai", refs=True)
+        except TypeError:
+            snapshot = await body.aria_snapshot(mode="ai")
         logger.debug("ARIA snapshot with refs extracted (%d chars)", len(snapshot))
         return snapshot
     except Exception:
@@ -53,7 +57,10 @@ async def extract_frame_snapshots(page: Page) -> list[dict[str, str]]:
             continue
         try:
             body = frame.locator("body")
-            snapshot = await body.aria_snapshot(mode="ai", refs=True)
+            try:
+                snapshot = await body.aria_snapshot(mode="ai", refs=True)
+            except TypeError:
+                snapshot = await body.aria_snapshot(mode="ai")
             frame_snapshots.append({
                 "frame_url": frame.url,
                 "frame_name": frame.name,

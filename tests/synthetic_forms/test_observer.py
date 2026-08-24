@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -33,38 +32,42 @@ class TestSimpleForm:
         """Observer detects text input fields with correct labels."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             assert state.url.endswith("simple.html")
             assert state.page_type == "form"
 
-            # Should find: fullName, email, phone, dob, state, notes, submit
             refs = [e.ref for e in state.elements]
             assert len(refs) >= 6
 
-            # Check fullName field
+            # Check fullName field uses split name fields
             name_fields = [e for e in state.elements if e.name and "name" in e.name.lower()]
             assert len(name_fields) >= 1
             name_field = name_fields[0]
             assert name_field.required is True
             assert name_field.input_type == "text"
+            # Verify split fields exist
+            assert name_field.accessible_name is not None or name_field.label_text is not None
 
     @pytest.mark.asyncio
     async def test_observes_required_fields(self, settings: Settings, observer: PageObserver) -> None:
         """Observer correctly identifies required fields."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             required = [e for e in state.elements if e.required]
-            assert len(required) >= 3  # fullName, phone, dob, state
+            assert len(required) >= 3
 
     @pytest.mark.asyncio
     async def test_observes_select_dropdown(self, settings: Settings, observer: PageObserver) -> None:
         """Observer detects select dropdown."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             selects = [e for e in state.elements if e.role == "combobox"]
             assert len(selects) >= 1
@@ -74,7 +77,8 @@ class TestSimpleForm:
         """Observer detects submit button."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             buttons = [e for e in state.elements if e.role == "button"]
             assert len(buttons) >= 1
@@ -84,10 +88,49 @@ class TestSimpleForm:
         """Every element has a unique ref."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             refs = [e.ref for e in state.elements]
             assert len(refs) == len(set(refs))
+
+    @pytest.mark.asyncio
+    async def test_page_observation_has_aria_snapshot(self, settings: Settings, observer: PageObserver) -> None:
+        """PageObservation includes ARIA snapshot per audit #2."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
+            obs = await observer.observe(page)
+
+            assert obs.aria_snapshot is not None
+            assert len(obs.aria_snapshot) > 0
+            assert obs.observation_id != ""
+
+    @pytest.mark.asyncio
+    async def test_element_has_split_name_fields(self, settings: Settings, observer: PageObserver) -> None:
+        """Elements have split name fields per audit #3."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
+            obs = await observer.observe(page)
+            state = obs.page_state
+
+            # All elements should have the new fields (even if None)
+            for el in state.elements:
+                assert hasattr(el, "accessible_name")
+                assert hasattr(el, "html_name")
+                assert hasattr(el, "label_text")
+
+    @pytest.mark.asyncio
+    async def test_element_has_context_fields(self, settings: Settings, observer: PageObserver) -> None:
+        """Elements have context fields per audit #8."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/simple.html")
+            obs = await observer.observe(page)
+            state = obs.page_state
+
+            for el in state.elements:
+                assert hasattr(el, "section_heading")
+                assert hasattr(el, "group_label")
+                assert hasattr(el, "help_text")
 
 
 class TestDropdownForm:
@@ -95,28 +138,23 @@ class TestDropdownForm:
 
     @pytest.mark.asyncio
     async def test_observes_hidden_elements(self, settings: Settings, observer: PageObserver) -> None:
-        """Observer detects initially hidden dependent dropdowns."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/dropdowns.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
-            # Should find state dropdown
             selects = [e for e in state.elements if e.role == "combobox"]
             assert len(selects) >= 1
 
     @pytest.mark.asyncio
     async def test_dependent_dropdown_appears(self, settings: Settings, observer: PageObserver) -> None:
-        """After selecting state, district dropdown appears."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/dropdowns.html")
+            await page.locator("#state").select_option("kerala")
 
-            # Select Kerala
-            state_select = page.locator("#state")
-            await state_select.select_option("kerala")
-
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
             selects = [e for e in state.elements if e.role == "combobox"]
-            # Now should have state + district = 2 dropdowns
             assert len(selects) >= 2
 
 
@@ -125,23 +163,23 @@ class TestCheckboxesRadios:
 
     @pytest.mark.asyncio
     async def test_observes_radios(self, settings: Settings, observer: PageObserver) -> None:
-        """Observer detects radio buttons."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/checks.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             radios = [e for e in state.elements if e.role == "radio"]
-            assert len(radios) >= 4  # gender (3) + category (4)
+            assert len(radios) >= 4
 
     @pytest.mark.asyncio
     async def test_observes_checkboxes(self, settings: Settings, observer: PageObserver) -> None:
-        """Observer detects checkboxes."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/checks.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             checkboxes = [e for e in state.elements if e.role == "checkbox"]
-            assert len(checkboxes) >= 4  # services (4) + terms (1)
+            assert len(checkboxes) >= 4
 
 
 class TestValidationForm:
@@ -149,35 +187,23 @@ class TestValidationForm:
 
     @pytest.mark.asyncio
     async def test_observes_validation_errors(self, settings: Settings, observer: PageObserver) -> None:
-        """Observer detects validation errors on the page."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/validation.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
-            assert len(state.validation_errors) >= 2  # aadhaar + pincode
+            assert len(state.validation_errors) >= 2
 
     @pytest.mark.asyncio
     async def test_validation_messages_captured(self, settings: Settings, observer: PageObserver) -> None:
-        """Validation error messages are captured."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/validation.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
             messages = [v.message for v in state.validation_errors if v.message]
             assert len(messages) >= 2
             assert any("12 digits" in m for m in messages)
-
-    @pytest.mark.asyncio
-    async def test_invalid_element_detected(self, settings: Settings, observer: PageObserver) -> None:
-        """Elements with aria-invalid are flagged."""
-        async with BrowserManager(settings) as manager:
-            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/validation.html")
-            state = await observer.observe(page)
-
-            # The aadhaar field should have aria-invalid
-            aadhaar_el = [e for e in state.elements if e.name and "aadhaar" in e.name.lower()]
-            # It might not show invalid in DOM extraction but validation errors are present
-            assert len(state.validation_errors) >= 2
 
 
 class TestMultiStep:
@@ -185,27 +211,22 @@ class TestMultiStep:
 
     @pytest.mark.asyncio
     async def test_observes_step1(self, settings: Settings, observer: PageObserver) -> None:
-        """Observer sees only step 1 elements initially."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/multistep.html")
-            state = await observer.observe(page)
+            obs = await observer.observe(page)
+            state = obs.page_state
 
-            # Should see step 1 fields (name, dob, gender) + Next button
             visible_elements = [e for e in state.elements if e.visible]
             buttons = [e for e in visible_elements if e.role == "button"]
             assert len(buttons) >= 1
 
     @pytest.mark.asyncio
     async def test_navigate_to_step2(self, settings: Settings, observer: PageObserver) -> None:
-        """After clicking Next, step 2 fields become visible."""
         async with BrowserManager(settings) as manager:
             page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/multistep.html")
-
-            # Click Next
             await page.get_by_role("button", name="Next").click()
 
-            state = await observer.observe(page)
-            # Step 2 should now be visible: email, phone, Back, Next
-            texts = [e.name or e.label or "" for e in state.elements]
-            all_text = " ".join(texts).lower()
-            assert "email" in all_text or "phone" in all_text
+            obs = await observer.observe(page)
+            state = obs.page_state
+            all_names = " ".join(e.name or "" for e in state.elements).lower()
+            assert "email" in all_names or "phone" in all_names

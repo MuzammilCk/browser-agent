@@ -156,10 +156,16 @@ pytest tests/unit/test_page_state.py -v
 - Scroll, go_back, press, open: 4 tests
 - Error handling: 2 tests (no value, nonexistent ref)
 
-### Full Suite — 2026-08-24
+### Full Suite — 2026-08-24 (post-audit fixes)
 
 **Command:** `pytest tests/ -v`
-**Result:** 47 passed in 38.62s
+**Result:** 77 passed in 75.83s
+
+**New tests added:**
+- `tests/unit/test_resolvers.py` — 15 tests for ValueResolver + DocumentResolver + DocumentRegistry
+- `tests/integration/test_executor.py` — Added action validation tests, scroll_to test, fill_no_value validation test
+- `tests/unit/test_models.py` — Added split name tests, context fields, PageObservation, action validation tests
+- `tests/synthetic_forms/test_observer.py` — Added ARIA snapshot test, split name fields test, context fields test
 
 ---
 

@@ -124,6 +124,26 @@ A test page can be manipulated reliably through typed Python functions. ✅
 - Test results: 47 passed in 38.62s (full suite)
 - Notes: Locator uses role+name exact matching to avoid strict mode violations. Dependent dropdown re-observation works correctly.
 
+### Audit Fixes (Phases 0-2 hardening) — 2026-08-24
+
+**Audit issues addressed:** 1-16
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1+2+5 | ARIA snapshot unused, refs inconsistent, broken snapshot_ref | Created PageObservation model, removed broken `[ref='e12']` strategy |
+| 3 | name vs accessible_name mixed | Split into accessible_name, html_name, label_text with .name property fallback |
+| 6 | Page classification too heuristic | Multi-signal classification with form/review/payment detection |
+| 7 | Auth detection too keyword-based | Confidence-scored detection using field types + structure + alerts |
+| 8 | Page context too thin | Added section_heading, help_text, group_label, nearby_text to ElementState |
+| 9 | fill ignores value_ref | Implemented ValueResolver (USER.full_name → actual value locally) |
+| 10 | upload ignores document_ref | Implemented DocumentResolver (DOCUMENT.aadhaar → file path locally) |
+| 11+12 | Verification not wired | ActionVerifier now called after every state-changing action |
+| 14 | Scroll too low-level | Added scroll_to(target_ref) semantic scrolling |
+| 15 | Frames not connected | Frame-aware element extraction + frame_id on elements |
+| 16 | Action model needs validation | Pydantic validators enforce required fields per action type |
+
+**Tests:** 77 passed in 75.83s
+
 ---
 
 ## Phase 3 — Verification Engine

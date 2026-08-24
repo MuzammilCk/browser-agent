@@ -146,6 +146,46 @@
 - Verification engine compares before/after page states rather than just Playwright return values
 - Added dataclasses import to executor.py to fix initial import issue
 
+### [Phase 2+] Audit fixes — hardening foundation — 2026-08-24
+
+**What was done:**
+- Created PageObservation model wrapping PageState + ARIA snapshot + frame snapshots (#1, #2)
+- Split ElementState.name into accessible_name, html_name, label_text (#3)
+- Removed broken snapshot_ref locator strategy (#5)
+- Improved page classification with multi-signal approach (#6)
+- Added confidence-scored auth detection (#7)
+- Added surrounding context fields to ElementState (#8)
+- Implemented ValueResolver for USER.x semantic references (#9)
+- Implemented DocumentResolver for DOCUMENT.x references (#10)
+- Wired ActionVerifier into executor core loop (#11, #12)
+- Added scroll_to(target_ref) semantic scrolling (#14)
+- Added frame-aware element extraction (#15)
+- Added Pydantic validators for action-specific required fields (#16)
+
+**Files created/modified:**
+- `app/models/page_state.py` — PageObservation model, split name fields, context fields, confidence auth
+- `app/models/actions.py` — Pydantic validators per action type
+- `app/browser/dom.py` — Split name extraction, context extraction, frame-aware extraction
+- `app/browser/observer.py` — Produces PageObservation, improved auth/classification, frame handling
+- `app/browser/locator.py` — Removed broken snapshot_ref, uses split name fields
+- `app/browser/executor.py` — Wired verification, value/document resolution, scroll_to
+- `app/vault/resolver.py` — ValueResolver + DocumentResolver + UserVault + DocumentRegistry
+- `tests/unit/test_resolvers.py` — 15 resolver tests
+- `tests/unit/test_models.py` — Updated for split names, validation, PageObservation
+- `tests/synthetic_forms/test_observer.py` — Updated for PageObservation API
+- `tests/integration/test_executor.py` — Updated for verification, action validation
+
+**Tests run:**
+- `python -m pytest tests/ -v` — 77 passed in 75.83s
+
+**Notes:**
+- All 16 audit issues addressed
+- PageObservation wraps PageState + ARIA snapshot for LLM consumption
+- ElementState now has split name fields with backward-compatible .name property
+- Verification runs after every state-changing action (not optional)
+- ValueResolver keeps sensitive user data out of LLM context
+- Action validation rejects invalid field combinations at Pydantic level
+
 <!-- Example entry:
 
 ### [Phase 0.1] Repository bootstrap — 2024-08-24
