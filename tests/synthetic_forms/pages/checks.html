@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Checkboxes and Radios</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        .radio-group label, .checkbox-group label { font-weight: normal; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Preferences</h1>
+    <form id="prefsForm">
+        <div class="form-group">
+            <label>Gender</label>
+            <div class="radio-group">
+                <label><input type="radio" name="gender" value="male"> Male</label>
+                <label><input type="radio" name="gender" value="female"> Female</label>
+                <label><input type="radio" name="gender" value="other"> Other</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <div class="radio-group">
+                <label><input type="radio" name="category" value="general"> General</label>
+                <label><input type="radio" name="category" value="obc"> OBC</label>
+                <label><input type="radio" name="category" value="sc"> SC</label>
+                <label><input type="radio" name="category" value="st"> ST</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Services Interested In</label>
+            <div class="checkbox-group">
+                <label><input type="checkbox" name="services" value="income_cert"> Income Certificate</label>
+                <label><input type="checkbox" name="services" value="caste_cert"> Caste Certificate</label>
+                <label><input type="checkbox" name="services" value="residence_cert"> Residence Certificate</label>
+                <label><input type="checkbox" name="services" value="ews_cert"> EWS Certificate</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="terms" name="terms" required>
+                I agree to the terms and conditions
+            </label>
+        </div>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>

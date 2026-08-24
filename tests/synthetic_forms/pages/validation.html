@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Validation Form</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        input[aria-invalid="true"] { border-color: red; }
+        .error { color: red; font-size: 0.875rem; margin-top: 0.25rem; }
+        button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Validated Form</h1>
+    <form id="validatedForm">
+        <div class="form-group">
+            <label for="aadhaar">Aadhaar Number</label>
+            <input type="text" id="aadhaar" name="aadhaar" aria-invalid="true"
+                   aria-errormessage="aadhaar-error" value="1234">
+            <div class="error" id="aadhaar-error" role="alert">
+                Aadhaar number must be exactly 12 digits
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="pan">PAN Number</label>
+            <input type="text" id="pan" name="pan" value="ABCD1234">
+        </div>
+        <div class="form-group">
+            <label for="pincode">Pincode</label>
+            <input type="text" id="pincode" name="pincode" aria-invalid="true"
+                   aria-errormessage="pincode-error">
+            <div class="error" id="pincode-error" role="alert">
+                Please enter a valid 6-digit pincode
+            </div>
+        </div>
+        <div role="alert" id="global-error">
+            Please fix the errors above before submitting
+        </div>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>

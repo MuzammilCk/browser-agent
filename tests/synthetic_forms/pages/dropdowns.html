@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dropdown Form</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Location Selection</h1>
+    <form id="locationForm">
+        <div class="form-group">
+            <label for="state">State</label>
+            <select id="state" name="state" required>
+                <option value="">-- Select State --</option>
+                <option value="kerala">Kerala</option>
+                <option value="tamil_nadu">Tamil Nadu</option>
+                <option value="karnataka">Karnataka</option>
+            </select>
+        </div>
+        <div class="form-group" id="districtGroup" style="display:none;">
+            <label for="district">District</label>
+            <select id="district" name="district">
+                <option value="">-- Select District --</option>
+            </select>
+        </div>
+        <div class="form-group" id="blockGroup" style="display:none;">
+            <label for="block">Block/Taluk</label>
+            <select id="block" name="block">
+                <option value="">-- Select Block --</option>
+            </select>
+        </div>
+        <button type="submit">Continue</button>
+    </form>
+    <script>
+        const data = {
+            kerala: {
+                districts: {
+                    thiruvananthapuram: ['Neyyattinkara', 'Parassala', 'Kazhakkoottam'],
+                    ernakulam: ['Aluva', 'Kakkanad', 'Perumbavoor'],
+                    kozhikode: ['Kozhikode', 'Vadakara', 'Koyilandy']
+                }
+            },
+            tamil_nadu: {
+                districts: {
+                    chennai: ['Tondiarpet', 'Egmore', 'Mylapore'],
+                    coimbatore: ['Pollachi', 'Sulur', 'Mettupalayam']
+                }
+            },
+            karnataka: {
+                districts: {
+                    bangalore: ['Bangalore North', 'Bangalore South'],
+                    mysore: ['Mysore', 'Hunsur']
+                }
+            }
+        };
+
+        document.getElementById('state').addEventListener('change', function() {
+            const districtGroup = document.getElementById('districtGroup');
+            const districtSelect = document.getElementById('district');
+            const blockGroup = document.getElementById('blockGroup');
+            const blockSelect = document.getElementById('block');
+
+            blockGroup.style.display = 'none';
+            blockSelect.innerHTML = '<option value="">-- Select Block --</option>';
+
+            if (this.value && data[this.value]) {
+                districtGroup.style.display = 'block';
+                districtSelect.innerHTML = '<option value="">-- Select District --</option>';
+                for (const dist of Object.keys(data[this.value].districts)) {
+                    const opt = document.createElement('option');
+                    opt.value = dist;
+                    opt.textContent = dist.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    districtSelect.appendChild(opt);
+                }
+            } else {
+                districtGroup.style.display = 'none';
+            }
+        });
+
+        document.getElementById('district').addEventListener('change', function() {
+            const state = document.getElementById('state').value;
+            const blockGroup = document.getElementById('blockGroup');
+            const blockSelect = document.getElementById('block');
+
+            if (state && this.value && data[state].districts[this.value]) {
+                blockGroup.style.display = 'block';
+                blockSelect.innerHTML = '<option value="">-- Select Block --</option>';
+                for (const block of data[state].districts[this.value]) {
+                    const opt = document.createElement('option');
+                    opt.value = block.toLowerCase().replace(/\s+/g, '_');
+                    opt.textContent = block;
+                    blockSelect.appendChild(opt);
+                }
+            } else {
+                blockGroup.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

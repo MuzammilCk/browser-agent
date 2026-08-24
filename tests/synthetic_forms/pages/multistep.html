@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Step Form</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        input, select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        .btn-group { display: flex; gap: 1rem; margin-top: 1.5rem; }
+        button { padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-next { background: #2563eb; color: white; }
+        .btn-back { background: #6b7280; color: white; }
+        .btn-submit { background: #16a34a; color: white; }
+        .progress { height: 4px; background: #e5e7eb; border-radius: 2px; margin-bottom: 2rem; }
+        .progress-bar { height: 100%; background: #2563eb; border-radius: 2px; transition: width 0.3s; }
+    </style>
+</head>
+<body>
+    <h1>Application Wizard</h1>
+    <div class="progress">
+        <div class="progress-bar" id="progressBar" style="width: 33%"></div>
+    </div>
+
+    <!-- Step 1: Personal Info -->
+    <div class="step active" id="step1">
+        <h2>Step 1: Personal Information</h2>
+        <div class="form-group">
+            <label for="s1_name">Full Name</label>
+            <input type="text" id="s1_name" name="name" required>
+        </div>
+        <div class="form-group">
+            <label for="s1_dob">Date of Birth</label>
+            <input type="date" id="s1_dob" name="dob" required>
+        </div>
+        <div class="form-group">
+            <label for="s1_gender">Gender</label>
+            <select id="s1_gender" name="gender" required>
+                <option value="">-- Select --</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+            </select>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn-next" onclick="nextStep(2)">Next →</button>
+        </div>
+    </div>
+
+    <!-- Step 2: Contact -->
+    <div class="step" id="step2">
+        <h2>Step 2: Contact Details</h2>
+        <div class="form-group">
+            <label for="s2_email">Email</label>
+            <input type="email" id="s2_email" name="email">
+        </div>
+        <div class="form-group">
+            <label for="s2_phone">Phone</label>
+            <input type="tel" id="s2_phone" name="phone" required>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn-back" onclick="prevStep(1)">← Back</button>
+            <button type="button" class="btn-next" onclick="nextStep(3)">Next →</button>
+        </div>
+    </div>
+
+    <!-- Step 3: Review -->
+    <div class="step" id="step3">
+        <h2>Step 3: Review & Submit</h2>
+        <div id="reviewContent">
+            <p>Please review your information before submitting.</p>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn-back" onclick="prevStep(2)">← Back</button>
+            <button type="submit" class="btn-submit">Submit Application</button>
+        </div>
+    </div>
+
+    <script>
+        function nextStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step' + step).classList.add('active');
+            document.getElementById('progressBar').style.width = (step / 3 * 100) + '%';
+        }
+        function prevStep(step) {
+            nextStep(step);
+        }
+    </script>
+</body>
+</html>
