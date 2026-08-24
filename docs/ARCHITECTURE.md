@@ -119,10 +119,8 @@
 
 ## Current Implementation Phase
 
-**Active phase:** Phase 4 — User Vault + Document Registry
+**Active phase:** Phase 5 — OpenRouter LLM Gateway
 
-**Phase status:** In progress
+**Completed:** Phases 0-4 + 3.5 hardening (128 tests passing)
 
-**Completed:** Phases 0-3 (90 tests passing)
-
-**Next action:** Implement UserVault, DocumentRef, semantic reference resolver, and tests.
+**Next action:** Implement OpenRouter client with structured output and retry policy.

@@ -156,36 +156,34 @@ pytest tests/unit/test_page_state.py -v
 - Scroll, go_back, press, open: 4 tests
 - Error handling: 2 tests (no value, nonexistent ref)
 
-### Full Suite — 2026-08-24 (post-audit fixes)
+### Phase 3 + 3.5 — Verification Engine + Hardening — 2026-08-24
 
 **Command:** `pytest tests/ -v`
-**Result:** 77 passed in 75.83s
+**Result:** 128 passed in 102.28s
 
-**New tests added:**
-- `tests/unit/test_resolvers.py` — 15 tests for ValueResolver + DocumentResolver + DocumentRegistry
-- `tests/integration/test_executor.py` — Added action validation tests, scroll_to test, fill_no_value validation test
-- `tests/unit/test_models.py` — Added split name tests, context fields, PageObservation, action validation tests
-- `tests/synthetic_forms/test_observer.py` — Added ARIA snapshot test, split name fields test, context fields test
-
-### Phase 3 — Verification Engine — 2026-08-24
-
-**Command:** `pytest tests/synthetic_forms/test_verification.py -v`
-**Result:** 13 passed in 46.35s
-
-**Failure injection tests:**
+**Failure injection tests (Phase 3):**
 - Fill: field disappears → detected ✅
 - Fill: field becomes disabled → detected ✅
 - Fill: validation error appears → detected ✅
 - Fill: normal fill → verified success ✅
-- Click: no-op button → UNCERTAIN ✅
+- Click: no-op button → UNCERTAIN (stops progression) ✅
 - Click: new elements added → SUCCESS ✅
 - Click: title changed → SUCCESS ✅
-- Click: element toggled → SUCCESS/UNCERTAIN ✅
 - Select: dependent field appears → SUCCESS ✅
 - Select: invalid option → FAILURE ✅
-- Select: triggers new text field → SUCCESS ✅
-- Re-observation after fill → verified ✅
-- Re-observation after select → verified ✅
+- Re-observation after fill → post_observation returned ✅
+- Re-observation after select → post_observation returned ✅
+
+**Hardening tests (Phase 3.5):**
+- Stale observation_id rejected ✅
+- Correct observation_id accepted ✅
+- ActionResult has post_observation ✅
+- ActionResult has recovery_required, user_action_required ✅
+- Upload requires document_ref (no raw paths) ✅
+- Sensitive Aadhaar pattern rejected ✅
+- Sensitive PAN pattern rejected ✅
+- open action removed from schema ✅
+- UNCERTAIN causes recovery_required=True ✅
 
 ### Phase 4 — User Vault — 2026-08-24
 
@@ -193,13 +191,13 @@ pytest tests/unit/test_page_state.py -v
 **Result:** 34 passed in 0.41s
 
 **Test coverage:**
-- UserVault model (5 tests): defaults, data, serialization, JSON roundtrip, all fields
-- Sensitivity classification (7 tests): government IDs, financial, DOB, public fields, safe fields, all fields classified
-- ValueResolver (6 tests): resolve, empty, invalid, unknown, valid ref, all populated
-- DocumentResolver (4 tests): existing, nonexistent, invalid prefix, valid ref
-- DocumentRegistry (3 tests): register/resolve, list, nonexistent
-- VaultManager (6 tests): empty load, save/load vault, save/load registry, sample vault, register doc, lazy load
-- Integration (3 tests): full resolution flow, document flow, end-to-end
+- UserVault model (5 tests)
+- Sensitivity classification (7 tests)
+- ValueResolver (6 tests)
+- DocumentResolver (4 tests)
+- DocumentRegistry (3 tests)
+- VaultManager (6 tests)
+- Integration (3 tests)
 
 ---
 
@@ -215,5 +213,6 @@ These are hosted locally during testing (served by FastAPI or Playwright file://
 | File upload | Upload input | `tests/synthetic_forms/pages/upload.html` |
 | Multi-step | Wizard with Next/Back | `tests/synthetic_forms/pages/multistep.html` |
 | Validation | Invalid states + error messages | `tests/synthetic_forms/pages/validation.html` |
-| Iframe | Content in iframe | *(Phase 1+)* |
-| Dynamic | Fields that appear/change | *(Phase 1+)* |
+| Failure (fill) | Disappearing field, disabled, validation | `tests/synthetic_forms/pages/failure_fill.html` |
+| Failure (click) | No-op, alert, toggle, add elements | `tests/synthetic_forms/pages/failure_click.html` |
+| Failure (select) | Dependent dropdowns, invalid option | `tests/synthetic_forms/pages/failure_select.html` |
