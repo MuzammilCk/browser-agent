@@ -225,6 +225,33 @@
 - Re-observation after fill → verified ✅
 - Re-observation after select → verified ✅
 
+### [Phase 4] User Vault + Document Registry — 2026-08-24
+
+**What was done:**
+- Created sensitivity classification module (PUBLIC/INTERNAL/SENSITIVE/SECRET)
+- Created vault manager for JSON persistence (load/save)
+- Created sample vault with realistic Indian government form data
+- Wrote 34 comprehensive tests (vault, resolvers, classification, manager, integration)
+
+**Files created/modified:**
+- `app/vault/sensitivity.py` — Field sensitivity classification per SAFETY.md
+- `app/vault/manager.py` — VaultManager for JSON load/save + sample data creation
+- `tests/unit/test_vault.py` — 34 tests covering all vault functionality
+
+**Tests run:**
+- `python -m pytest tests/unit/test_vault.py -v` — 34 passed in 0.41s
+- `python -m pytest tests/ --tb=short` — 124 passed in 90.46s
+
+**Verification:**
+- UserVault serializes/deserializes correctly ✅
+- All 29 fields accessible and classified ✅
+- Government IDs marked as SENSITIVE ✅
+- ValueResolver maps USER.x → actual values ✅
+- DocumentResolver maps DOCUMENT.x → file paths ✅
+- VaultManager persists to JSON and reloads ✅
+- Sample vault creates realistic Indian form data ✅
+- End-to-end: create vault → resolve → verify values ✅
+
 <!-- Example entry:
 
 ### [Phase 0.1] Repository bootstrap — 2024-08-24

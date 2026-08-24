@@ -119,8 +119,10 @@
 
 ## Current Implementation Phase
 
-**Active phase:** Phase 0 — Repository Bootstrap
+**Active phase:** Phase 4 — User Vault + Document Registry
 
-**Phase status:** Not started
+**Phase status:** In progress
 
-**Next action:** Create project structure and verify Playwright launches Chromium.
+**Completed:** Phases 0-3 (90 tests passing)
+
+**Next action:** Implement UserVault, DocumentRef, semantic reference resolver, and tests.

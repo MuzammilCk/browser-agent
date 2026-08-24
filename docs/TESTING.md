@@ -187,6 +187,20 @@ pytest tests/unit/test_page_state.py -v
 - Re-observation after fill → verified ✅
 - Re-observation after select → verified ✅
 
+### Phase 4 — User Vault — 2026-08-24
+
+**Command:** `pytest tests/unit/test_vault.py -v`
+**Result:** 34 passed in 0.41s
+
+**Test coverage:**
+- UserVault model (5 tests): defaults, data, serialization, JSON roundtrip, all fields
+- Sensitivity classification (7 tests): government IDs, financial, DOB, public fields, safe fields, all fields classified
+- ValueResolver (6 tests): resolve, empty, invalid, unknown, valid ref, all populated
+- DocumentResolver (4 tests): existing, nonexistent, invalid prefix, valid ref
+- DocumentRegistry (3 tests): register/resolve, list, nonexistent
+- VaultManager (6 tests): empty load, save/load vault, save/load registry, sample vault, register doc, lazy load
+- Integration (3 tests): full resolution flow, document flow, end-to-end
+
 ---
 
 ## Synthetic Test Pages
