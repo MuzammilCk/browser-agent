@@ -119,8 +119,8 @@
 
 ## Current Implementation Phase
 
-**Active phase:** Phase 5 — OpenRouter LLM Gateway
+**Active phase:** Phase 7 — Agent Control Loop
 
-**Completed:** Phases 0-4 + 3.5 hardening (128 tests passing)
+**Completed:** Phases 0-6 (191 tests passing)
 
-**Next action:** Implement OpenRouter client with structured output and retry policy.
+**Next action:** Implement the closed-loop agent: observe → plan → policy → execute → verify → observe.

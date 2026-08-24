@@ -130,4 +130,35 @@
 - Retry then success → recovered ✅
 - Non-JSON content → raw string ✅
 - Close cleans up ✅
+
+---
+
+### [Phase 6] Semantic Field Mapper — 2026-08-24
+
+**What was done:**
+- Created FieldBinding model with confidence scoring (HIGH/MEDIUM/LOW/NONE)
+- Created MappingResult with strategy counts, unmapped/ambiguous tracking
+- Created FieldMapper with deterministic keyword/semantic matching (30+ rules)
+- Implemented LLM-based ambiguous resolution via OpenRouter structured output
+- Exclude-keyword logic prevents false matches (e.g., "Father Name" → not USER.full_name)
+- Minimum keyword length filter prevents false positives (e.g., "name" → not random text)
+- Evidence trail for every mapping (labels, roles, sections, LLM reasoning)
+- Similar label discrimination tested: Applicant/Father/Mother/Spouse Name
+- Created synthetic government form with 20+ fields and dependent dropdown
+
+**Files created:**
+- `app/agent/field_mapper.py` — FieldMapper class with deterministic + LLM matching
+- `app/agent/field_mapper_models.py` — FieldBinding, MappingResult, enums
+- `tests/unit/test_field_mapper.py` — 41 tests
+- `tests/synthetic_forms/pages/field_mapping.html` — Synthetic form
+
+**Tests run:**
+- `python -m pytest tests/ -q` — 191 passed in 86.53s
+
+**Verification:**
+- Deterministic matching correctly distinguishes semantically similar labels ✅
+- LLM resolves ambiguous cases when gateway available ✅
+- Confidence levels prevent incorrect auto-fill ✅
+- Evidence trail supports audit ✅
+- 30+ field types covered ✅
 - Context manager works ✅

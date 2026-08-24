@@ -177,13 +177,61 @@ Fail-closed on all errors. ✅
 
 ---
 
-## Phase 6 — Semantic Field Mapper
-
-**Status:** ⬜ Not started
+## Phase 6 — Semantic Field Mapper ✅
 
 ### Goal
 
-Map website form fields to user-data references using LLM reasoning.
+Map website form fields to user-data references using deterministic matching + LLM reasoning.
+
+### Deliverables
+
+- [x] `FieldBinding` model with confidence scoring (HIGH/MEDIUM/LOW/NONE)
+- [x] `MappingResult` with strategy counts, unmapped/ambiguous field tracking
+- [x] `FieldMapper` with deterministic keyword/semantic matching
+- [x] LLM-based ambiguous resolution via OpenRouter structured output
+- [x] 30+ deterministic rules covering identity, contact, address, education, financial, documents
+- [x] Exclude-keyword logic to prevent false matches (e.g., "Father Name" → not USER.full_name)
+- [x] Minimum keyword length filter to prevent false positives (e.g., "name" → not random text)
+- [x] Evidence trail for every mapping (labels, roles, sections, LLM reasoning)
+- [x] Similar label discrimination tested: Applicant/Father/Mother/Spouse Name
+- [x] Synthetic government form with 20+ fields and dependent dropdown
+- [x] 41 tests (deterministic matching, confidence, evidence, LLM mocked, discrimination)
+
+### Deterministic Rules
+
+| Category | Bindings |
+|----------|----------|
+| Identity | USER.full_name, USER.date_of_birth, USER.gender, USER.age |
+| Contact | USER.mobile, USER.email |
+| Address | USER.address, USER.permanent_address, USER.state, USER.district, USER.pincode, USER.village |
+| Government IDs | USER.aadhaar_number, USER.pan_number, USER.voter_id |
+| Education | USER.education |
+| Employment | USER.occupation, USER.annual_income |
+| Category | USER.category |
+| Family | USER.father_name, USER.mother_name, USER.spouse_name |
+| Financial | USER.bank_account, USER.ifsc_code |
+| Documents | DOCUMENT.aadhaar, DOCUMENT.income_certificate, DOCUMENT.photo, DOCUMENT.signature |
+
+### Similar Label Discrimination
+
+| Label | Correct Mapping |
+|-------|----------------|
+| Applicant Name | USER.full_name |
+| Father's Name | USER.father_name |
+| Mother's Name | USER.mother_name |
+| Spouse Name | USER.spouse_name |
+| Parent/Guardian Name | Not USER.full_name (exclude) |
+
+### Acceptance Criteria
+
+```
+Deterministic matching correctly distinguishes semantically similar labels. ✅
+LLM resolves ambiguous cases when gateway available. ✅
+Confidence levels prevent incorrect auto-fill. ✅
+Evidence trail supports audit. ✅
+```
+
+**Tests:** 41 passed in 0.44s (Phase 6), 191 total
 
 ---
 

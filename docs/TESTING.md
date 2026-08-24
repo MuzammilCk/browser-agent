@@ -228,3 +228,22 @@ These are hosted locally during testing (served by FastAPI or Playwright file://
 | Failure (fill) | Disappearing field, disabled, validation | `tests/synthetic_forms/pages/failure_fill.html` |
 | Failure (click) | No-op, alert, toggle, add elements | `tests/synthetic_forms/pages/failure_click.html` |
 | Failure (select) | Dependent dropdowns, invalid option | `tests/synthetic_forms/pages/failure_select.html` |
+| Field mapping | 20+ fields, similar labels, dependent dropdown | `tests/synthetic_forms/pages/field_mapping.html` |
+
+### Phase 6 — Semantic Field Mapper — 2026-08-24
+
+**Command:** `pytest tests/unit/test_field_mapper.py -v`
+**Result:** 41 passed in 0.44s
+
+**Test coverage:**
+- Deterministic matching (19 tests): full_name, father, mother, spouse, parent, dob, gender, mobile, email, state, district, aadhaar, pan, income, category, qualification, village, pincode, address
+- Document mapping (4 tests): aadhaar upload, income cert, photo, signature
+- Confidence scoring (4 tests): high exact, medium partial, no match returns None, disabled skipped
+- Evidence collection (3 tests): includes label, role, section
+- Full pipeline (2 tests): deterministic only, correct binding structure
+- LLM resolution (3 tests): called for ambiguous, graceful failure, no LLM skips
+- Similar label discrimination (4 tests): all name variants distinct, address vs permanent, income vs bank, photo vs aadhaar
+- Strategy counts (1 test): populated correctly
+
+**Full suite:** 191 passed in 86.53s
+

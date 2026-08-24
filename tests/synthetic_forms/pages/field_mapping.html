@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scholarship Application Form</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input, select, textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .required::after { content: " *"; color: red; }
+        .help-text { color: #666; font-size: 0.9em; margin-top: 3px; }
+        .error { color: red; font-size: 0.9em; margin-top: 3px; display: none; }
+        .section { margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .radio-group label { display: inline; font-weight: normal; margin-right: 15px; }
+    </style>
+</head>
+<body>
+    <h1>Post-Matric Scholarship Application</h1>
+    <p>Government of Example State — Department of Social Justice</p>
+
+    <form id="scholarshipForm" action="/submit" method="post">
+
+        <!-- SECTION 1: Personal Details -->
+        <div class="section">
+            <h2>Section 1: Personal Details</h2>
+
+            <div class="form-group">
+                <label for="applicantName" class="required">Applicant Name (as per Aadhaar)</label>
+                <input type="text" id="applicantName" name="applicantName"
+                       aria-label="Applicant Name as per Aadhaar"
+                       placeholder="Enter your full name as per Aadhaar card" required>
+                <div class="help-text">Name must match exactly with your Aadhaar card</div>
+            </div>
+
+            <div class="form-group">
+                <label for="fatherName" class="required">Father's Name</label>
+                <input type="text" id="fatherName" name="fatherName"
+                       aria-label="Father's Full Name"
+                       placeholder="Enter father's full name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="motherName" class="required">Mother's Name</label>
+                <input type="text" id="motherName" name="motherName"
+                       aria-label="Mother's Full Name"
+                       placeholder="Enter mother's full name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="spouseName">Spouse Name</label>
+                <input type="text" id="spouseName" name="spouseName"
+                       aria-label="Spouse Name (if married)"
+                       placeholder="Enter spouse name if applicable">
+                <div class="help-text">Leave blank if not married</div>
+            </div>
+
+            <div class="form-group">
+                <label for="dob" class="required">Date of Birth</label>
+                <input type="date" id="dob" name="dob"
+                       aria-label="Date of Birth as per Aadhaar" required>
+            </div>
+
+            <div class="form-group">
+                <label class="required">Gender</label>
+                <div class="radio-group" role="radiogroup" aria-label="Gender">
+                    <label><input type="radio" name="gender" value="male" required> Male</label>
+                    <label><input type="radio" name="gender" value="female"> Female</label>
+                    <label><input type="radio" name="gender" value="other"> Other</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="category" class="required">Category</label>
+                <select id="category" name="category" aria-label="Social Category" required>
+                    <option value="">-- Select Category --</option>
+                    <option value="general">General</option>
+                    <option value="obc">OBC</option>
+                    <option value="sc">SC</option>
+                    <option value="st">ST</option>
+                    <option value="ews">EWS</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- SECTION 2: Contact Details -->
+        <div class="section">
+            <h2>Section 2: Contact Details</h2>
+
+            <div class="form-group">
+                <label for="mobile" class="required">Mobile Number</label>
+                <input type="tel" id="mobile" name="mobile"
+                       aria-label="10-digit Mobile Number"
+                       placeholder="Enter 10-digit mobile number"
+                       pattern="[0-9]{10}" required>
+                <div class="help-text">OTP will be sent to this number</div>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email"
+                       aria-label="Email Address"
+                       placeholder="Enter your email address">
+            </div>
+        </div>
+
+        <!-- SECTION 3: Address -->
+        <div class="section">
+            <h2>Section 3: Address Details</h2>
+
+            <div class="form-group">
+                <label for="state" class="required">State</label>
+                <select id="state" name="state" aria-label="State of Residence" required>
+                    <option value="">-- Select State --</option>
+                    <option value="kerala">Kerala</option>
+                    <option value="karnataka">Karnataka</option>
+                    <option value="tamilnadu">Tamil Nadu</option>
+                    <option value="maharashtra">Maharashtra</option>
+                    <option value="delhi">Delhi</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="district" class="required">District</label>
+                <select id="district" name="district" aria-label="District" required>
+                    <option value="">-- Select District --</option>
+                </select>
+                <div class="help-text">Districts will load after selecting state</div>
+            </div>
+
+            <div class="form-group">
+                <label for="village" class="required">Village / Town</label>
+                <input type="text" id="village" name="village"
+                       aria-label="Village or Town Name"
+                       placeholder="Enter village or town name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="address" class="required">Full Address</label>
+                <textarea id="address" name="address" rows="3"
+                          aria-label="Complete Postal Address"
+                          placeholder="Enter your complete address" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="pincode" class="required">Pincode</label>
+                <input type="text" id="pincode" name="pincode"
+                       aria-label="6-digit Pincode"
+                       placeholder="Enter 6-digit pincode"
+                       pattern="[0-9]{6}" required>
+            </div>
+        </div>
+
+        <!-- SECTION 4: Education -->
+        <div class="section">
+            <h2>Section 4: Educational Details</h2>
+
+            <div class="form-group">
+                <label for="qualification" class="required">Highest Qualification</label>
+                <select id="qualification" name="qualification"
+                        aria-label="Highest Educational Qualification" required>
+                    <option value="">-- Select Qualification --</option>
+                    <option value="10th">10th Pass</option>
+                    <option value="12th">12th Pass</option>
+                    <option value="graduate">Graduate</option>
+                    <option value="postgraduate">Post Graduate</option>
+                    <option value="phd">PhD</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="income" class="required">Annual Family Income (₹)</label>
+                <input type="text" id="income" name="income"
+                       aria-label="Annual Family Income in Rupees"
+                       placeholder="Enter annual family income" required>
+                <div class="help-text">Income as per income certificate</div>
+            </div>
+        </div>
+
+        <!-- SECTION 5: Documents -->
+        <div class="section">
+            <h2>Section 5: Document Upload</h2>
+
+            <div class="form-group">
+                <label for="aadhaarUpload" class="required">Upload Aadhaar Card</label>
+                <input type="file" id="aadhaarUpload" name="aadhaarUpload"
+                       aria-label="Upload Aadhaar Card PDF"
+                       accept=".pdf,.jpg,.jpeg,.png" required>
+                <div class="help-text">PDF or image, max 2MB</div>
+            </div>
+
+            <div class="form-group">
+                <label for="incomeUpload" class="required">Upload Income Certificate</label>
+                <input type="file" id="incomeUpload" name="incomeUpload"
+                       aria-label="Upload Income Certificate PDF"
+                       accept=".pdf" required>
+            </div>
+
+            <div class="form-group">
+                <label for="photoUpload" class="required">Upload Passport Photo</label>
+                <input type="file" id="photoUpload" name="photoUpload"
+                       aria-label="Upload Passport Size Photo"
+                       accept=".jpg,.jpeg,.png" required>
+            </div>
+
+            <div class="form-group">
+                <label for="signatureUpload" class="required">Upload Signature</label>
+                <input type="file" id="signatureUpload" name="signatureUpload"
+                       aria-label="Upload Signature Image"
+                       accept=".jpg,.jpeg,.png" required>
+            </div>
+        </div>
+
+        <!-- SECTION 6: Declaration -->
+        <div class="section">
+            <h2>Section 6: Declaration</h2>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="declaration" name="declaration" required>
+                    I hereby declare that all information provided above is true and correct to the best of my knowledge.
+                </label>
+            </div>
+        </div>
+
+        <button type="submit" id="submitBtn" aria-label="Submit Application">
+            Submit Application
+        </button>
+    </form>
+
+    <script>
+        // Dependent dropdown: State → District
+        const stateDistricts = {
+            kerala: ['Thiruvananthapuram', 'Kollam', 'Pathanamthitta', 'Alappuzha', 'Kottayam', 'Idukki', 'Ernakulam', 'Thrissur', 'Palakkad', 'Malappuram', 'Kozhikode', 'Wayanad', 'Kannur', 'Kasargod'],
+            karnataka: ['Bengaluru Urban', 'Bengaluru Rural', 'Mysuru', 'Hubballi-Dharwad', 'Mangaluru', 'Belagavi', 'Kalaburagi', 'Ballari', 'Vijayapura', 'Hassan'],
+            tamilnadu: ['Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem', 'Tirunelveli', 'Erode', 'Vellore', 'Thanjavur', 'Dindigul'],
+            maharashtra: ['Mumbai', 'Pune', 'Nagpur', 'Thane', 'Nashik', 'Aurangabad', 'Solapur', 'Kolhapur', 'Amravati', 'Jalgaon'],
+            delhi: ['Central Delhi', 'East Delhi', 'New Delhi', 'North Delhi', 'South Delhi', 'West Delhi', 'Shahdara', 'North East Delhi', 'North West Delhi', 'South East Delhi']
+        };
+
+        const stateSelect = document.getElementById('state');
+        const districtSelect = document.getElementById('district');
+
+        stateSelect.addEventListener('change', function() {
+            const state = this.value;
+            districtSelect.innerHTML = '<option value="">-- Select District --</option>';
+
+            if (state && stateDistricts[state]) {
+                stateDistricts[state].forEach(district => {
+                    const option = document.createElement('option');
+                    option.value = district.toLowerCase().replace(/\s+/g, '_');
+                    option.textContent = district;
+                    districtSelect.appendChild(option);
+                });
+            }
+        });
+    </script>
+</body>
+</html>

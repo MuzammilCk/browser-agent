@@ -4,8 +4,8 @@ from app.config.settings import Settings
 
 
 def test_default_settings() -> None:
-    """Settings load with defaults."""
-    settings = Settings()
+    """Settings load with defaults (ignoring .env file)."""
+    settings = Settings(_env_file=None)
     assert settings.openrouter_model == "anthropic/claude-sonnet-4-20250514"
     assert settings.openrouter_timeout_seconds == 60
     assert settings.headless is True
