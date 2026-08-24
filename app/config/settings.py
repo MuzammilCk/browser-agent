@@ -19,11 +19,11 @@ class Settings(BaseSettings):
     # OpenRouter
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_model: str = Field(
-        default="anthropic/claude-sonnet-4-20250514",
+        default="stealth/ox-alpha",
         description="Primary reasoning model",
     )
     openrouter_vision_model: str = Field(
-        default="anthropic/claude-sonnet-4-20250514",
+        default="stealth/ox-alpha",
         description="Vision-capable model for screenshot fallback",
     )
     openrouter_fallback_model: str = Field(

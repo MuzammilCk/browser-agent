@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BharatGov - Indian Government Portal Browser</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #0b1120;
+            --bg-surface: #111a2e;
+            --bg-card: #162036;
+            --bg-card-hover: #1c2a45;
+            --bg-elevated: #1e2d4a;
+            --border: #253352;
+            --border-subtle: #1e2d4a;
+            --text-primary: #e8edf5;
+            --text-secondary: #8e9bb8;
+            --text-muted: #5e6d8a;
+            --accent: #e07020;
+            --accent-dim: rgba(224, 112, 32, 0.12);
+            --accent-mid: rgba(224, 112, 32, 0.25);
+            --accent-hover: #c8601a;
+            --green: #2ea86a;
+            --green-dim: rgba(46, 168, 106, 0.1);
+            --amber: #d4952a;
+            --amber-dim: rgba(212, 149, 42, 0.1);
+            --red: #d44a4a;
+            --red-dim: rgba(212, 74, 74, 0.1);
+            --blue: #3a8fd4;
+            --blue-dim: rgba(58, 143, 212, 0.1);
+            --teal: #2a9d8f;
+            --teal-dim: rgba(42, 157, 143, 0.1);
+            --violet: #7c6dd8;
+            --violet-dim: rgba(124, 109, 216, 0.1);
+            --pink: #c75d8a;
+            --pink-dim: rgba(199, 93, 138, 0.1);
+            --radius: 10px;
+            --radius-sm: 6px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            min-height: 100dvh;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .app { max-width: 1280px; margin: 0 auto; padding: 0 1.5rem; }
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.25rem 0;
+            border-bottom: 1px solid var(--border-subtle);
+            margin-bottom: 2.5rem;
+        }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .header-logo {
+            width: 32px; height: 32px;
+            background: var(--accent);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.9rem; font-weight: 700; color: white;
+        }
+        .header-name {
+            font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em;
+        }
+        .header-name span { color: var(--accent); }
+        .header-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ── Hero ── */
+        .hero {
+            padding: 2rem 0 2.5rem;
+        }
+        .hero-eyebrow {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+        }
+        .hero h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.035em;
+            line-height: 1.15;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+        }
+        .hero p {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            max-width: 520px;
+            line-height: 1.6;
+        }
+
+        /* ── Stats Row ── */
+        .stats {
+            display: flex;
+            gap: 0;
+            margin: 2rem 0;
+            border-top: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .stat {
+            flex: 1;
+            padding: 1.25rem 0;
+            text-align: center;
+            border-right: 1px solid var(--border-subtle);
+        }
+        .stat:last-child { border-right: none; }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+        .stat-label {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-top: 0.2rem;
+        }
+
+        /* ── Search ── */
+        .search-section { margin-bottom: 1.5rem; position: relative; }
+        .search-wrapper { position: relative; max-width: 560px; }
+        .search-icon {
+            position: absolute;
+            left: 1rem; top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            width: 16px; height: 16px;
+        }
+        .search-input {
+            width: 100%;
+            padding: 0.75rem 1rem 0.75rem 2.75rem;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-primary);
+            font-size: 0.88rem;
+            font-family: inherit;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-dim);
+        }
+        .search-input::placeholder { color: var(--text-muted); }
+        .search-results {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0; right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            max-height: 360px;
+            overflow-y: auto;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+        }
+        .search-results.active { display: block; }
+        .search-result-item {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-subtle);
+            transition: background 0.12s;
+        }
+        .search-result-item:last-child { border-bottom: none; }
+        .search-result-item:hover { background: var(--bg-card-hover); }
+        .search-result-item .name { font-weight: 600; font-size: 0.88rem; }
+        .search-result-item .domain {
+            font-size: 0.72rem; color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .search-result-item .desc {
+            font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.15rem;
+        }
+
+        /* ── Filter ── */
+        .filter-section { margin-bottom: 2rem; }
+        .filter-pills {
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }
+        .pill {
+            padding: 0.4rem 0.9rem;
+            border-radius: 100px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .pill:hover { border-color: var(--text-muted); color: var(--text-secondary); }
+        .pill.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+        .pill .count {
+            font-size: 0.68rem;
+            opacity: 0.65;
+            margin-left: 0.25rem;
+        }
+
+        /* ── Section Header ── */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 1.25rem;
+        }
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .section-count {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ── Category Block ── */
+        .category-block { margin-bottom: 2.5rem; }
+        .category-label {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-bottom: 1rem;
+        }
+        .category-dot {
+            width: 8px; height: 8px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+        .category-label h3 {
+            font-size: 0.88rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+        .category-label .cat-count {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            margin-left: auto;
+        }
+
+        /* ── Site Grid ── */
+        .sites-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 0.75rem;
+        }
+
+        /* ── Site Card ── */
+        .site-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            padding: 1.1rem;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .site-card:hover {
+            border-color: var(--border);
+            background: var(--bg-card-hover);
+        }
+        .site-card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.4rem;
+            gap: 0.5rem;
+        }
+        .site-card h4 {
+            font-size: 0.88rem;
+            font-weight: 600;
+            line-height: 1.3;
+            color: var(--text-primary);
+        }
+        .site-card .domain {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 0.4rem;
+        }
+        .site-card .desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 0.75rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .site-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tasks-count {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .tasks-count svg { width: 13px; height: 13px; opacity: 0.5; }
+        .level-tag {
+            padding: 0.15rem 0.5rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.65rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .level-central { background: var(--blue-dim); color: var(--blue); }
+        .level-state { background: var(--violet-dim); color: var(--violet); }
+
+        /* ── Subcategory badge ── */
+        .sub-badge {
+            padding: 0.15rem 0.5rem;
+            border-radius: 100px;
+            font-size: 0.62rem;
+            font-weight: 500;
+            white-space: nowrap;
+            flex-shrink: 0;
+            background: var(--bg-surface);
+            color: var(--text-muted);
+            border: 1px solid var(--border-subtle);
+        }
+
+        /* ── Category dot colors ── */
+        .dot-identity { background: var(--blue); }
+        .dot-tax { background: var(--amber); }
+        .dot-education { background: var(--green); }
+        .dot-health { background: var(--pink); }
+        .dot-agriculture { background: var(--teal); }
+        .dot-employment { background: var(--blue); }
+        .dot-business { background: var(--violet); }
+        .dot-digital { background: var(--accent); }
+        .dot-governance { background: var(--amber); }
+        .dot-welfare { background: var(--green); }
+        .dot-transport { background: var(--pink); }
+        .dot-land { background: var(--teal); }
+        .dot-state { background: var(--violet); }
+
+        /* ── State chips ── */
+        .state-chips {
+            display: flex;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.25rem;
+        }
+        .state-chip {
+            padding: 0.3rem 0.65rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.72rem;
+            font-weight: 500;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.12s;
+            font-family: inherit;
+        }
+        .state-chip:hover, .state-chip.active {
+            border-color: var(--violet);
+            color: var(--violet);
+            background: var(--violet-dim);
+        }
+
+        /* ── Modal ── */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(5, 8, 18, 0.75);
+            backdrop-filter: blur(6px);
+            z-index: 1000;
+            display: none;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 3rem 1rem;
+            overflow-y: auto;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            width: 100%;
+            max-width: 680px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .modal-header {
+            padding: 1.5rem 1.5rem 1.25rem;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .modal-header h2 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+        .modal-header .url {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-top: 0.3rem;
+        }
+        .modal-close {
+            width: 30px; height: 30px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.12s;
+            flex-shrink: 0;
+        }
+        .modal-close:hover {
+            border-color: var(--red);
+            color: var(--red);
+            background: var(--red-dim);
+        }
+        .modal-body { padding: 1.5rem; }
+        .modal-desc {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            margin-bottom: 1.25rem;
+            line-height: 1.6;
+        }
+        .modal-tags {
+            display: flex;
+            gap: 0.4rem;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+        }
+        .modal-tag {
+            padding: 0.25rem 0.6rem;
+            border-radius: 100px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+        }
+        .tasks-heading {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.75rem;
+        }
+        .task-item {
+            padding: 0.85rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            margin-bottom: 0.5rem;
+        }
+        .task-item:last-child { margin-bottom: 0; }
+        .task-item h5 {
+            font-size: 0.84rem;
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+        .task-item p {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .task-tags {
+            display: flex;
+            gap: 0.3rem;
+            margin-top: 0.4rem;
+        }
+        .task-tag {
+            padding: 0.12rem 0.4rem;
+            border-radius: 100px;
+            font-size: 0.62rem;
+            font-weight: 500;
+        }
+        .task-tag.auth { background: var(--amber-dim); color: var(--amber); }
+        .task-tag.payment { background: var(--pink-dim); color: var(--pink); }
+
+        .modal-footer {
+            padding: 1.25rem 1.5rem;
+            border-top: 1px solid var(--border-subtle);
+            display: flex;
+            gap: 0.6rem;
+        }
+        .btn {
+            padding: 0.6rem 1.25rem;
+            border-radius: var(--radius-sm);
+            border: none;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { border-color: var(--text-muted); color: var(--text-primary); }
+
+        /* ── Loading / Empty ── */
+        .loading {
+            display: flex; align-items: center; justify-content: center;
+            padding: 4rem; color: var(--text-muted); font-size: 0.88rem;
+        }
+        .spinner {
+            width: 20px; height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin-right: 0.6rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .empty-state {
+            text-align: center; padding: 4rem 2rem; color: var(--text-muted);
+        }
+        .empty-state h3 { font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 0.4rem; }
+        .empty-state p { font-size: 0.82rem; }
+
+        /* ── Footer ── */
+        .footer {
+            border-top: 1px solid var(--border-subtle);
+            padding: 2rem 0;
+            margin-top: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            .app { padding: 0 1rem; }
+            .hero h1 { font-size: 1.5rem; }
+            .stats { flex-wrap: wrap; }
+            .stat { flex: 1 1 33%; border-right: none; border-bottom: 1px solid var(--border-subtle); }
+            .stat:last-child { border-bottom: none; }
+            .sites-grid { grid-template-columns: 1fr; }
+            .modal { margin: 0.5rem; border-radius: 10px; }
+            .header { flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+            .footer { flex-direction: column; gap: 0.5rem; text-align: center; }
+        }
+        @media (max-width: 480px) {
+            .stat { flex: 1 1 50%; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-brand">
+                <div class="header-logo">BG</div>
+                <div class="header-name">Bharat<span>Gov</span></div>
+            </div>
+            <div class="header-meta">v1.0 / 60 portals / 336 tasks</div>
+        </header>
+
+        <!-- Hero -->
+        <section class="hero">
+            <div class="hero-eyebrow">Government Portal Registry</div>
+            <h1>Browse Indian Government Services</h1>
+            <p>Access, search, and automate tasks across official Indian government websites. Every portal, every task, one place.</p>
+        </section>
+
+        <!-- Stats -->
+        <div class="stats" id="statsBar">
+            <div class="stat"><div class="stat-value" id="statSites">-</div><div class="stat-label">Portals</div></div>
+            <div class="stat"><div class="stat-value" id="statTasks">-</div><div class="stat-label">Tasks</div></div>
+            <div class="stat"><div class="stat-value" id="statCats">-</div><div class="stat-label">Categories</div></div>
+            <div class="stat"><div class="stat-value" id="statCentral">-</div><div class="stat-label">Central</div></div>
+            <div class="stat"><div class="stat-value" id="statState">-</div><div class="stat-label">State</div></div>
+        </div>
+
+        <!-- Search -->
+        <section class="search-section">
+            <div class="search-wrapper">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" class="search-input" id="searchInput" placeholder="Search portals, services, or tasks...">
+                <div class="search-results" id="searchResults"></div>
+            </div>
+        </section>
+
+        <!-- Filters -->
+        <section class="filter-section">
+            <div class="filter-pills" id="filterPills"></div>
+        </section>
+
+        <!-- Content -->
+        <div class="section-header">
+            <h2 class="section-title" id="viewTitle">All Portals</h2>
+            <span class="section-count" id="viewCount"></span>
+        </div>
+        <div id="content">
+            <div class="loading"><div class="spinner"></div> Loading portals...</div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span>BharatGov Portal Registry</span>
+            <span>Open-source government automation agent</span>
+        </footer>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <div>
+                    <h2 id="modalTitle"></h2>
+                    <div class="url" id="modalUrl"></div>
+                </div>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+
+    <script>
+        const CATEGORY_DOTS = {
+            'Identity & Documents': 'dot-identity',
+            'Tax & Finance': 'dot-tax',
+            'Education': 'dot-education',
+            'Health': 'dot-health',
+            'Agriculture': 'dot-agriculture',
+            'Employment': 'dot-employment',
+            'Business & MSME': 'dot-business',
+            'Digital Services': 'dot-digital',
+            'Governance': 'dot-governance',
+            'Welfare': 'dot-welfare',
+            'Transport & Vehicles': 'dot-transport',
+            'Land & Revenue': 'dot-land',
+            'State Government': 'dot-state',
+        };
+
+        const CATEGORY_ICONS = {
+            'Identity & Documents': '\u{1F4C4}',
+            'Tax & Finance': '\u{1F4B0}',
+            'Education': '\u{1F393}',
+            'Health': '\u{2695}',
+            'Agriculture': '\u{1F33E}',
+            'Employment': '\u{1F4BC}',
+            'Business & MSME': '\u{1F3E2}',
+            'Digital Services': '\u{1F4BB}',
+            'Governance': '\u{1F3DB}',
+            'Welfare': '\u{1F91D}',
+            'Transport & Vehicles': '\u{1F697}',
+            'Land & Revenue': '\u{1F30D}',
+            'State Government': '\u{1F3EA}',
+        };
+
+        let allData = null;
+        let activeFilter = 'All';
+        let activeState = null;
+
+        async function loadData() {
+            try {
+                const [sitesRes, statsRes] = await Promise.all([
+                    fetch('/api/sites'),
+                    fetch('/api/stats'),
+                ]);
+                allData = await sitesRes.json();
+                const stats = await statsRes.json();
+
+                document.getElementById('statSites').textContent = stats.total_sites;
+                document.getElementById('statTasks').textContent = stats.total_tasks;
+                document.getElementById('statCats').textContent = stats.categories;
+                document.getElementById('statCentral').textContent = stats.central_sites;
+                document.getElementById('statState').textContent = stats.state_sites;
+
+                renderFilters();
+                renderContent();
+            } catch (e) {
+                document.getElementById('content').innerHTML =
+                    '<div class="empty-state"><h3>Could not load portals</h3><p>Check that the backend API is running.</p></div>';
+            }
+        }
+
+        function renderFilters() {
+            const cats = Object.keys(allData.categories);
+            let html = `<button class="pill ${activeFilter === 'All' ? 'active' : ''}" onclick="setFilter('All')">All<span class="count">${allData.stats.total_sites}</span></button>`;
+            cats.forEach(cat => {
+                const count = Object.values(allData.categories[cat]).reduce((a, s) => a + s.length, 0);
+                html += `<button class="pill ${activeFilter === cat ? 'active' : ''}" onclick="setFilter('${cat}')">${CATEGORY_ICONS[cat] || ''} ${cat}<span class="count">${count}</span></button>`;
+            });
+            document.getElementById('filterPills').innerHTML = html;
+        }
+
+        function setFilter(cat) {
+            activeFilter = cat;
+            activeState = null;
+            renderFilters();
+            renderContent();
+        }
+
+        function renderContent() {
+            const container = document.getElementById('content');
+            const titleEl = document.getElementById('viewTitle');
+            const countEl = document.getElementById('viewCount');
+
+            if (activeFilter === 'State Government') {
+                renderStateView(container, titleEl, countEl);
+                return;
+            }
+
+            let html = '';
+            let totalSites = 0;
+            const cats = activeFilter === 'All' ? Object.keys(allData.categories) : [activeFilter];
+
+            cats.forEach(cat => {
+                const subcats = allData.categories[cat];
+                if (!subcats) return;
+                const catSites = Object.values(subcats).reduce((a, s) => a + s.length, 0);
+                totalSites += catSites;
+
+                const dotClass = CATEGORY_DOTS[cat] || 'dot-identity';
+                html += `
+                    <section class="category-block">
+                        <div class="category-label">
+                            <div class="category-dot ${dotClass}"></div>
+                            <h3>${cat}</h3>
+                            <span class="cat-count">${catSites} portal${catSites !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="sites-grid">
+                `;
+
+                Object.entries(subcats).forEach(([subcat, sites]) => {
+                    sites.forEach(site => {
+                        const levelClass = site.government_level === 'state' ? 'level-state' : 'level-central';
+                        const stateLabel = site.state ? ` / ${site.state}` : '';
+                        html += `
+                            <div class="site-card" onclick="openSite('${site.domain}')">
+                                <div class="site-card-top">
+                                    <h4>${site.official_name}</h4>
+                                    <span class="sub-badge">${subcat}${stateLabel}</span>
+                                </div>
+                                <div class="domain">${site.domain}</div>
+                                <div class="desc">${site.description}</div>
+                                <div class="site-card-footer">
+                                    <span class="tasks-count">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                                        ${site.tasks_count} task${site.tasks_count !== 1 ? 's' : ''}
+                                    </span>
+                                    <span class="level-tag ${levelClass}">${site.government_level}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                });
+
+                html += '</div></section>';
+            });
+
+            if (!html) {
+                html = '<div class="empty-state"><h3>No portals found</h3><p>Try a different filter or search term.</p></div>';
+            }
+
+            titleEl.textContent = activeFilter === 'All' ? 'All Portals' : activeFilter;
+            countEl.textContent = totalSites ? `${totalSites} portal${totalSites !== 1 ? 's' : ''}` : '';
+            container.innerHTML = html;
+        }
+
+        function renderStateView(container, titleEl, countEl) {
+            const stateData = allData.categories['State Government'] || {};
+
+            if (activeState) {
+                let found = [];
+                Object.values(stateData).forEach(arr => {
+                    found.push(...arr.filter(s => s.state === activeState));
+                });
+                renderSiteList(container, titleEl, countEl, found, activeState);
+                return;
+            }
+
+            const allStates = new Set();
+            Object.values(stateData).forEach(arr => arr.forEach(s => { if (s.state) allStates.add(s.state); }));
+
+            let html = '<div class="state-chips">';
+            html += `<button class="state-chip ${!activeState ? 'active' : ''}" onclick="filterState(null)">All States</button>`;
+            [...allStates].sort().forEach(state => {
+                html += `<button class="state-chip" onclick="filterState('${state}')">${state}</button>`;
+            });
+            html += '</div>';
+
+            let allSites = [];
+            Object.values(stateData).forEach(arr => allSites.push(...arr));
+
+            html += '<div class="sites-grid">';
+            allSites.forEach(site => {
+                html += `
+                    <div class="site-card" onclick="openSite('${site.domain}')">
+                        <div class="site-card-top">
+                            <h4>${site.official_name}</h4>
+                            <span class="sub-badge">${site.state || 'State'}</span>
+                        </div>
+                        <div class="domain">${site.domain}</div>
+                        <div class="desc">${site.description}</div>
+                        <div class="site-card-footer">
+                            <span class="tasks-count">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                                ${site.tasks_count} task${site.tasks_count !== 1 ? 's' : ''}
+                            </span>
+                            <span class="level-tag level-state">State</span>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            titleEl.textContent = 'State Government Portals';
+            countEl.textContent = allSites.length ? `${allSites.length} portals` : '';
+            container.innerHTML = html;
+        }
+
+        function renderSiteList(container, titleEl, countEl, sites, stateName) {
+            let html = '<div class="sites-grid">';
+            sites.forEach(site => {
+                html += `
+                    <div class="site-card" onclick="openSite('${site.domain}')">
+                        <div class="site-card-top">
+                            <h4>${site.official_name}</h4>
+                            <span class="sub-badge">${site.subcategory || 'State Portal'}</span>
+                        </div>
+                        <div class="domain">${site.domain}</div>
+                        <div class="desc">${site.description}</div>
+                        <div class="site-card-footer">
+                            <span class="tasks-count">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                                ${site.tasks_count} task${site.tasks_count !== 1 ? 's' : ''}
+                            </span>
+                            <span class="level-tag level-state">State</span>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            titleEl.textContent = stateName;
+            countEl.textContent = `${sites.length} portal${sites.length !== 1 ? 's' : ''}`;
+            container.innerHTML = html;
+        }
+
+        function filterState(state) {
+            activeState = state;
+            renderContent();
+        }
+
+        // Search
+        const searchInput = document.getElementById('searchInput');
+        const searchResults = document.getElementById('searchResults');
+        let searchTimeout;
+
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const q = e.target.value.trim();
+            if (q.length < 2) { searchResults.classList.remove('active'); return; }
+            searchTimeout = setTimeout(() => doSearch(q), 250);
+        });
+
+        searchInput.addEventListener('blur', () => {
+            setTimeout(() => searchResults.classList.remove('active'), 200);
+        });
+
+        async function doSearch(q) {
+            try {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                if (!data.results.length) {
+                    searchResults.innerHTML = '<div class="search-result-item"><div class="name">No results found</div></div>';
+                } else {
+                    searchResults.innerHTML = data.results.map(r => `
+                        <div class="search-result-item" onclick="openSite('${r.domain}')">
+                            <div class="name">${r.official_name}</div>
+                            <div class="domain">${r.domain}</div>
+                            <div class="desc">${r.description}</div>
+                        </div>
+                    `).join('');
+                }
+                searchResults.classList.add('active');
+            } catch (e) {}
+        }
+
+        // Modal
+        async function openSite(domain) {
+            try {
+                const res = await fetch(`/api/site/${domain}`);
+                const site = await res.json();
+                if (site.error) return;
+
+                document.getElementById('modalTitle').textContent = site.official_name;
+                document.getElementById('modalUrl').textContent = site.url;
+
+                let tagsHtml = `<span class="modal-tag">${site.category}</span>`;
+                tagsHtml += `<span class="modal-tag">${site.subcategory}</span>`;
+                if (site.state) tagsHtml += `<span class="modal-tag">${site.state}</span>`;
+                tagsHtml += `<span class="modal-tag">${site.government_level}</span>`;
+
+                let tasksHtml = '';
+                site.tasks.forEach(t => {
+                    let tags = '';
+                    if (t.requires_auth) tags += '<span class="task-tag auth">Auth Required</span>';
+                    if (t.requires_payment) tags += '<span class="task-tag payment">Payment</span>';
+                    tasksHtml += `
+                        <div class="task-item">
+                            <h5>${t.name}</h5>
+                            <p>${t.description}</p>
+                            ${tags ? `<div class="task-tags">${tags}</div>` : ''}
+                        </div>
+                    `;
+                });
+
+                document.getElementById('modalBody').innerHTML = `
+                    <p class="modal-desc">${site.description}</p>
+                    <div class="modal-tags">${tagsHtml}</div>
+                    <div class="tasks-heading">Available Tasks (${site.tasks.length})</div>
+                    ${tasksHtml}
+                `;
+
+                document.getElementById('modalFooter').innerHTML = `
+                    <a href="${site.url}" target="_blank" class="btn btn-primary">Open Portal</a>
+                    <button class="btn btn-secondary" onclick="startAutomation('${site.domain}')">Start Automation</button>
+                `;
+
+                document.getElementById('modalOverlay').classList.add('active');
+            } catch (e) {
+                console.error('Failed to load site:', e);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+        }
+
+        document.getElementById('modalOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('modalOverlay')) closeModal();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        function startAutomation(domain) {
+            closeModal();
+            alert(`Automation for ${domain} - coming soon!`);
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

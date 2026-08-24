@@ -138,6 +138,7 @@ class TestTrustedDomainRegistry:
         entry = DomainEntry(
             domain="custom.gov.in",
             official_name="Custom Service",
+            category="Test",
             government_level="state",
         )
         registry.register(entry)
