@@ -1,6 +1,10 @@
 """Browser action models — typed actions the LLM can emit.
 
-Updated per audit #16: Action-specific validation enforced via Pydantic validators.
+Phase 3.5 hardening:
+- #6: Removed open from LLM action set (navigation is workflow-controlled)
+- #7+#9: Upload requires document_ref only (no raw filesystem paths)
+- #8: Sensitive field policy for literal_value
+- #3: Added observation_id for stale ref prevention
 """
 
 from __future__ import annotations
@@ -9,15 +13,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.vault.sensitivity import is_sensitive
+
 
 class BrowserAction(BaseModel):
     """A single browser action to execute.
 
     Each action type has specific required fields enforced by validators.
+    The LLM may only emit actions from this set — open is NOT included
+    because navigation is controlled by the workflow/session layer.
     """
 
     action: Literal[
-        "open",
         "click",
         "fill",
         "select",
@@ -43,7 +50,7 @@ class BrowserAction(BaseModel):
     )
     literal_value: str | None = Field(
         default=None,
-        description="Literal value to use (only for non-sensitive fields)",
+        description="Literal value (only for non-sensitive fields)",
     )
     option: str | None = Field(
         default=None,
@@ -71,10 +78,14 @@ class BrowserAction(BaseModel):
         le=1.0,
         description="Confidence in this action being correct",
     )
+    observation_id: str | None = Field(
+        default=None,
+        description="Observation ID this action targets (for stale ref prevention)",
+    )
 
     @model_validator(mode="after")
     def validate_action_fields(self) -> BrowserAction:
-        """Enforce action-specific required field combinations."""
+        """Enforce action-specific required field combinations + sensitive policy."""
         act = self.action
 
         if act in ("click", "check", "uncheck", "scroll_to"):
@@ -88,6 +99,24 @@ class BrowserAction(BaseModel):
                 raise ValueError("fill requires either value_ref or literal_value")
             if self.value_ref and self.literal_value:
                 raise ValueError("fill cannot have both value_ref and literal_value")
+            # Sensitive field policy (#8): reject literal_value for sensitive fields
+            if self.literal_value and self.target_ref:
+                # Heuristic: if the value looks like sensitive data, reject it
+                # The actual field classification happens at resolver level,
+                # but we block obviously sensitive patterns here
+                import re
+                # Aadhaar pattern: 12 digits with optional dashes/spaces
+                if re.match(r"^[\d\s\-]{12,14}$", self.literal_value):
+                    raise ValueError(
+                        "Sensitive numeric value detected in literal_value. "
+                        "Use value_ref (e.g., USER.aadhaar_number) instead."
+                    )
+                # PAN pattern: 5 letters + 4 digits + 1 letter
+                if re.match(r"^[A-Z]{5}\d{4}[A-Z]$", self.literal_value):
+                    raise ValueError(
+                        "PAN number detected in literal_value. "
+                        "Use value_ref (e.g., USER.pan_number) instead."
+                    )
 
         if act == "select":
             if not self.target_ref:
@@ -98,12 +127,11 @@ class BrowserAction(BaseModel):
         if act == "upload":
             if not self.target_ref:
                 raise ValueError("upload requires target_ref")
-            if not self.document_ref and not self.literal_value:
-                raise ValueError("upload requires either document_ref or literal_value (file path)")
-
-        if act == "open":
-            if not self.literal_value:
-                raise ValueError("open requires literal_value (URL)")
+            if not self.document_ref:
+                raise ValueError(
+                    "upload requires document_ref (e.g., 'DOCUMENT.aadhaar'). "
+                    "Raw filesystem paths are not allowed."
+                )
 
         if act == "press":
             if not self.key:

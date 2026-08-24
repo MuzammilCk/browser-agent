@@ -63,8 +63,8 @@ def test_browser_action_validation_requires_fields() -> None:
     with pytest.raises(ValueError, match="click requires target_ref"):
         BrowserAction(action="click")
 
-    # open without URL
-    with pytest.raises(ValueError, match="open requires literal_value"):
+    # open is no longer in the action set (#6)
+    with pytest.raises(Exception):
         BrowserAction(action="open")
 
 
