@@ -41,6 +41,9 @@ htmlcov/
 .coverage.*
 coverage.xml
 
+# Screenshots from real site tests
+tests/real_sites/screenshots/
+
 # Misc
 *.log
 .cache/
