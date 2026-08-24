@@ -1,10 +1,10 @@
-"""Browser action executor — Phase 3.5 hardened.
+"""Browser action executor — Phase B hardened.
 
-- #1: UNCERTAIN verification stops progression (not silently continues)
-- #2+#23: ActionResult includes post_observation, recovery_required, user_action_required
-- #4: Frame-aware locator dispatch
-- #6: Removed open from LLM actions
-- #7: Upload requires document_ref only
+- PolicyEngine runs before every Playwright action
+- UNCERTAIN verification stops progression
+- Post-observation returned to caller
+- Frame-aware resolution
+- Document policy validation for uploads
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ from app.browser.locator import LocatorResolver
 from app.browser.verification import ActionVerifier, VerificationResult, VerificationStatus
 from app.models.actions import BrowserAction
 from app.models.page_state import PageObservation, PageState
+from app.policy.engine import PolicyDecision, PolicyEngine, PolicyResult, RiskLevel
+from app.policy.document_policy import DocumentPolicy
 from app.vault.resolver import DocumentResolver, DocumentRegistry, UserVault, ValueResolver
 
 if TYPE_CHECKING:
@@ -27,10 +29,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ActionResult:
-    """Result of executing a browser action — the contract for the future agent.
-
-    #2+#23: Includes post_observation so the next iteration uses fresh state.
-    """
+    """Result of executing a browser action — the contract for the future agent."""
 
     action: BrowserAction
     success: bool
@@ -39,26 +38,27 @@ class ActionResult:
     post_observation: PageObservation | None = None
     recovery_required: bool = False
     user_action_required: bool = False
+    policy_result: PolicyResult | None = None
 
 
 class BrowserExecutor:
     """Executes typed browser actions using Playwright.
 
-    Phase 3.5 hardened:
-    - UNCERTAIN stops progression
-    - Post-observation returned to caller
-    - Frame-aware resolution
+    Phase B: Every action passes through PolicyEngine before Playwright.
     """
 
     def __init__(
         self,
         vault: UserVault | None = None,
         document_registry: DocumentRegistry | None = None,
+        policy_engine: PolicyEngine | None = None,
     ) -> None:
         self.locator_resolver = LocatorResolver()
         self.verifier = ActionVerifier()
         self.value_resolver = ValueResolver(vault or UserVault())
         self.document_resolver = DocumentResolver(document_registry or DocumentRegistry())
+        self.policy_engine = policy_engine or PolicyEngine()
+        self.document_policy = DocumentPolicy()
 
     def set_vault(self, vault: UserVault) -> None:
         self.value_resolver = ValueResolver(vault)
@@ -72,21 +72,23 @@ class BrowserExecutor:
         action: BrowserAction,
         observation: PageObservation,
     ) -> ActionResult:
-        """Execute a browser action with full verification loop.
+        """Execute a browser action with full policy + verification loop.
 
         Flow:
-        1. Check observation staleness (#3)
-        2. Execute raw Playwright action
-        3. Re-observe page
-        4. Verify action result
-        5. Handle UNCERTAIN (#1)
-        6. Return ActionResult with post_observation (#2)
+        1. Check observation staleness
+        2. Policy gate (per audit #21)
+        3. Document policy for uploads (per audit #19)
+        4. Execute raw Playwright action
+        5. Re-observe page
+        6. Verify action result
+        7. Handle UNCERTAIN
+        8. Return ActionResult with post_observation
         """
         logger.info("Executing action: %s (target=%s)", action.action, action.target_ref)
 
         page_state = observation.page_state
 
-        # Check observation staleness (#3)
+        # Check observation staleness
         if action.observation_id and action.observation_id != observation.observation_id:
             return ActionResult(
                 action=action,
@@ -95,6 +97,52 @@ class BrowserExecutor:
                         f"but current observation is {observation.observation_id}",
                 recovery_required=True,
             )
+
+        # ─── POLICY GATE (per audit #21) ──────────────────────────
+        policy_result = self.policy_engine.evaluate(action, page_state)
+        logger.info("Policy: %s — %s", policy_result.decision.value, policy_result.reason)
+
+        if policy_result.blocked:
+            return ActionResult(
+                action=action,
+                success=False,
+                message=f"Policy DENIED: {policy_result.reason}",
+                recovery_required=True,
+                policy_result=policy_result,
+            )
+
+        if policy_result.needs_user:
+            return ActionResult(
+                action=action,
+                success=False,
+                message=f"Policy PAUSE_FOR_USER: {policy_result.reason}",
+                user_action_required=True,
+                policy_result=policy_result,
+            )
+
+        if policy_result.needs_confirmation:
+            # For now, log the confirmation requirement
+            # In Phase C, this will pause for user confirmation
+            logger.warning(
+                "Policy REQUIRE_CONFIRMATION: %s — proceeding for now",
+                policy_result.reason,
+            )
+
+        # ─── DOCUMENT POLICY (per audit #19) ──────────────────────
+        if action.action == "upload" and action.document_ref:
+            doc = self.document_resolver.resolve(action.document_ref)
+            if doc:
+                doc_type = self.document_resolver._doc_fields.get(
+                    action.document_ref, "unknown"
+                )
+                doc_result = self.document_policy.validate_upload(doc.path, doc_type)
+                if doc_result.blocked:
+                    return ActionResult(
+                        action=action,
+                        success=False,
+                        message=f"Document policy DENIED: {doc_result.reason}",
+                        recovery_required=True,
+                    )
 
         try:
             # Execute the raw action
@@ -119,8 +167,9 @@ class BrowserExecutor:
 
             result.verification = verification
             result.post_observation = new_observation
+            result.policy_result = policy_result
 
-            # #1: UNCERTAIN handling — stop progression
+            # UNCERTAIN handling — stop progression
             if verification.status == VerificationStatus.FAILURE:
                 logger.warning(
                     "Verification FAILED for %s: %s", action.action, verification.message

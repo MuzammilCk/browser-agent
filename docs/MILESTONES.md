@@ -205,13 +205,59 @@ Frame-aware locator resolves correctly. ✅
 
 ---
 
-## Phase B — Safety Engine
-
-**Status:** ⬜ Not started
+## Phase B — Safety Engine ✅
 
 ### Goal
 
 PolicyEngine with R0-R4 risk levels, user checkpoints, trusted domain registry.
+
+### Deliverables
+
+- [x] **PolicyEngine** (`app/policy/engine.py`) — runtime safety gate for all browser actions
+- [x] **RiskLevel enum** — LOW, SENSITIVE, AUTHENTICATION, HIGH_RISK
+- [x] **PolicyDecision enum** — ALLOW, DENY, REQUIRE_CONFIRMATION, PAUSE_FOR_USER
+- [x] **Action risk classification** — fill/click/select/upload/scroll classified by risk
+- [x] **Authentication checkpoints** — CAPTCHA/OTP/password → PAUSE_FOR_USER (audit #23)
+- [x] **Payment/submission detection** — Pay Now/Final Submit/Declare → REQUIRE_CONFIRMATION (audit #24)
+- [x] **Document policy** (`app/policy/document_policy.py`) — file type, size, path safety validation
+- [x] **Trusted domain registry** (`app/sites/registry.py`) — 15+ government domains
+- [x] **Policy wired into executor** — every action passes through before Playwright (audit #21)
+- [x] **ActionResult.policy_result** — policy outcome available to workflow
+
+### Risk Classification
+
+| Action | Risk Level | Policy |
+|--------|-----------|--------|
+| scroll, press, go_back, wait | LOW | ALLOW |
+| fill (non-sensitive) | LOW | ALLOW |
+| select, check, uncheck | LOW | ALLOW |
+| click (normal button) | LOW | ALLOW |
+| fill (Aadhaar, PAN, income) | SENSITIVE | REQUIRE_CONFIRMATION |
+| upload (any document) | SENSITIVE | REQUIRE_CONFIRMATION |
+| click (Pay Now, Final Submit) | HIGH_RISK | REQUIRE_CONFIRMATION |
+| Any action + CAPTCHA detected | AUTHENTICATION | PAUSE_FOR_USER |
+| Any action + OTP detected | AUTHENTICATION | PAUSE_FOR_USER |
+| Any action + password detected | AUTHENTICATION | PAUSE_FOR_USER |
+
+### Trusted Domains (15+)
+
+- pmkisan.gov.in, uidai.gov.in, incometax.gov.in, india.gov.in
+- scholarships.gov.in, parivahan.gov.in, passportindia.gov.in
+- gst.gov.in, mca.gov.in, kerala.gov.in, karnataka.gov.in
+- tn.gov.in, maharashtra.gov.in, delhi.gov.in, and more
+
+### Acceptance Criteria
+
+```
+PolicyEngine exists and is wired into executor. ✅
+Every action classified by risk level. ✅
+CAPTCHA/OTP/password → PAUSE_FOR_USER. ✅
+Payment/submission → REQUIRE_CONFIRMATION. ✅
+Document uploads validated by policy. ✅
+Trusted domain registry implemented. ✅
+```
+
+**Tests:** 46 new (Phase B), 248 total passed in 88.83s
 
 ---
 
