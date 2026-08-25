@@ -1,9 +1,16 @@
 """Vault manager — load/save user vault and document registry.
 
-Audit B6 fix: vault data is now encrypted at rest using Fernet symmetric
-encryption. The encryption key is derived from the VAULT_ENCRYPTION_KEY
-environment variable. If no key is provided, falls back to plaintext JSON
+Audit B6 fix: vault data is encrypted at rest using Fernet symmetric
+encryption. The encryption key is derived from a passphrase via salted
+scrypt (audit C9). If no key is provided, falls back to plaintext JSON
 with a logged warning (for development/testing only).
+
+On-disk formats:
+    Encrypted (current):  b"VLT1" + 16-byte salt + Fernet token
+    Encrypted (legacy):   raw Fernet token starting with b"gAAAAA"
+                          (readable for backward compatibility; re-saved
+                          in current format on next save)
+    Plaintext:            raw UTF-8 JSON
 """
 
 from __future__ import annotations
@@ -13,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +28,30 @@ from app.vault.resolver import DocumentRef, DocumentRegistry, UserVault
 
 logger = logging.getLogger(__name__)
 
+# Current encrypted-file header: magic + salt length + salt
+_MAGIC = b"VLT1"
+_SALT_LEN = 16
+# scrypt parameters (moderate: ~64MB memory, well within OWASP guidance)
+_SCRYPT_N = 2**14
+_SCRYPT_R = 8
+_SCRYPT_P = 1
 
-def _derive_fernet_key(passphrase: str) -> bytes:
-    """Derive a Fernet-compatible 32-byte key from a passphrase using SHA-256."""
+
+def _derive_fernet_key_scrypt(passphrase: str, salt: bytes) -> bytes:
+    """Derive a Fernet-compatible 32-byte key from passphrase + salt via scrypt."""
+    digest = hashlib.scrypt(
+        passphrase.encode("utf-8"),
+        salt=salt,
+        n=_SCRYPT_N,
+        r=_SCRYPT_R,
+        p=_SCRYPT_P,
+        dklen=32,
+    )
+    return base64.urlsafe_b64encode(digest)
+
+
+def _derive_fernet_key_legacy(passphrase: str) -> bytes:
+    """Legacy derivation (unsalted SHA-256) — only for reading old files."""
     digest = hashlib.sha256(passphrase.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest)
 
@@ -30,30 +59,41 @@ def _derive_fernet_key(passphrase: str) -> bytes:
 class VaultManager:
     """Manages loading and saving of UserVault and DocumentRegistry.
 
-    Audit B6 fix: vault data is encrypted at rest when VAULT_ENCRYPTION_KEY
-    is set. Sensitive values (Aadhaar, PAN, bank details) are protected
-    against unauthorized filesystem access.
+    Audit B6 fix: vault data is encrypted at rest when an encryption
+    passphrase is provided. Sensitive values (Aadhaar, PAN, bank details)
+    are protected against unauthorized filesystem access.
+
+    The passphrase is taken from (in order):
+      1. The explicit ``encryption_key`` constructor argument (preferred —
+         pass ``settings.vault_encryption_key`` here so .env works)
+      2. The ``VAULT_ENCRYPTION_KEY`` environment variable
 
     Without a key, falls back to plaintext with a warning (dev/test only).
     """
 
-    def __init__(self, vault_dir: str | Path = "data/vault") -> None:
+    def __init__(
+        self,
+        vault_dir: str | Path = "data/vault",
+        encryption_key: str | None = None,
+    ) -> None:
         self.vault_dir = Path(vault_dir)
         self.vault_dir.mkdir(parents=True, exist_ok=True)
         self._vault: UserVault | None = None
         self._registry: DocumentRegistry | None = None
         self._fernet: Any = None  # Fernet instance if encryption is enabled
-        self._init_encryption()
+        self._init_encryption(encryption_key)
 
-    def _init_encryption(self) -> None:
-        """Initialize Fernet encryption if VAULT_ENCRYPTION_KEY is set."""
-        key = os.environ.get("VAULT_ENCRYPTION_KEY", "")
+    def _init_encryption(self, encryption_key: str | None) -> None:
+        """Initialize Fernet encryption if a passphrase is available."""
+        key = encryption_key or os.environ.get("VAULT_ENCRYPTION_KEY", "")
         if key:
             try:
                 from cryptography.fernet import Fernet
-                derived = _derive_fernet_key(key)
-                self._fernet = Fernet(derived)
-                logger.info("Vault encryption enabled (Fernet)")
+                # Instance key materialized lazily per file (salt is stored
+                # alongside the data); this placeholder enables encryption mode.
+                self._fernet = "enabled"
+                self._passphrase = key
+                logger.info("Vault encryption enabled (Fernet + scrypt KDF)")
             except ImportError:
                 logger.warning(
                     "cryptography package not installed; vault will be stored as plaintext. "
@@ -63,9 +103,14 @@ class VaultManager:
                 logger.warning("Failed to initialize vault encryption: %s", e)
         else:
             logger.warning(
-                "VAULT_ENCRYPTION_KEY not set — vault stored as plaintext. "
-                "Set this env var to enable encryption at rest for sensitive data."
+                "No vault encryption passphrase set — vault stored as plaintext. "
+                "Set vault_encryption_key (settings) or VAULT_ENCRYPTION_KEY (env) "
+                "to enable encryption at rest for sensitive data."
             )
+
+    def _new_fernet(self, salt: bytes) -> Any:
+        from cryptography.fernet import Fernet
+        return Fernet(_derive_fernet_key_scrypt(self._passphrase, salt))
 
     @property
     def vault(self) -> UserVault:
@@ -82,20 +127,30 @@ class VaultManager:
         return self._registry
 
     def _encrypt(self, plaintext: str) -> bytes:
-        """Encrypt data if Fernet is available."""
+        """Encrypt data with a freshly generated salt (current format)."""
         if self._fernet:
-            return self._fernet.encrypt(plaintext.encode("utf-8"))
+            salt = secrets.token_bytes(_SALT_LEN)
+            token = self._new_fernet(salt).encrypt(plaintext.encode("utf-8"))
+            return _MAGIC + salt + token
         return plaintext.encode("utf-8")
 
     def _decrypt(self, data: bytes) -> str:
-        """Decrypt data if Fernet is available."""
-        if self._fernet:
-            return self._fernet.decrypt(data).decode("utf-8")
+        """Decrypt data in any supported format (current, legacy, plaintext)."""
+        if self._fernet and data[:4] == _MAGIC:
+            salt = data[4:4 + _SALT_LEN]
+            token = data[4 + _SALT_LEN:]
+            return self._new_fernet(salt).decrypt(token).decode("utf-8")
+        if self._fernet and data[:6] == b"gAAAAA":
+            # Legacy unsalted format — decryptable, re-saved in new format.
+            from cryptography.fernet import Fernet
+            fernet = Fernet(_derive_fernet_key_legacy(self._passphrase))
+            logger.info("Vault file uses legacy unsalted encryption; will upgrade on next save")
+            return fernet.decrypt(data).decode("utf-8")
         return data.decode("utf-8")
 
     def _is_encrypted(self, data: bytes) -> bool:
-        """Check if data is Fernet-encrypted (starts with 'gAAAAA')."""
-        return data[:6] == b"gAAAAA"
+        """Check if data is encrypted in either the current or legacy format."""
+        return data[:4] == _MAGIC or data[:6] == b"gAAAAA"
 
     def load_vault(self) -> UserVault:
         """Load user vault from file (encrypted or plaintext)."""
@@ -120,7 +175,7 @@ class VaultManager:
         return self._vault
 
     def save_vault(self, vault: UserVault | None = None) -> None:
-        """Save user vault to file (encrypted if VAULT_ENCRYPTION_KEY is set)."""
+        """Save user vault to file (encrypted if a passphrase is configured)."""
         vault = vault or self.vault
         vault_path = self.vault_dir / "user_vault.json"
         plaintext = vault.model_dump_json(indent=2)

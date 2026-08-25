@@ -748,7 +748,9 @@
             background: var(--bg-surface);
             border-top: 1px solid var(--border-default);
             z-index: var(--z-panel);
-            max-height: 50vh;
+            height: var(--panel-h, 50vh);
+            min-height: 220px;
+            max-height: 92vh;
             display: none;
             flex-direction: column;
             animation: slideUp var(--transition-slow) ease;
@@ -758,6 +760,29 @@
             to { transform: translateY(0); }
         }
         .auto-panel.active { display: flex; }
+        .auto-resize-handle {
+            position: absolute;
+            top: -4px; left: 0; right: 0;
+            height: 8px;
+            cursor: ns-resize;
+            z-index: 2;
+        }
+        .auto-resize-handle::after {
+            content: '';
+            position: absolute;
+            top: 3px; left: 50%;
+            transform: translateX(-50%);
+            width: 48px; height: 3px;
+            border-radius: var(--radius-full);
+            background: var(--border-default);
+            transition: background var(--transition-fast), width var(--transition-fast);
+        }
+        .auto-resize-handle:hover::after,
+        .auto-resize-handle.dragging::after {
+            background: var(--color-primary);
+            width: 72px;
+        }
+        body.panel-resizing { user-select: none; cursor: ns-resize; }
         .auto-panel-header {
             display: flex;
             justify-content: space-between;
@@ -1002,6 +1027,7 @@
 
     <!-- Automation Panel (Phase 1: aria-live for status updates) -->
     <div class="auto-panel" id="autoPanel" role="region" aria-label="Automation status">
+        <div class="auto-resize-handle" id="autoResizeHandle" title="Drag to resize — double-click to reset" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize automation panel"></div>
         <div class="auto-panel-header">
             <h3>
                 <span id="autoPanelTitle">Automation</span>
@@ -1009,13 +1035,24 @@
             </h3>
             <div style="display:flex;gap:0.5rem;align-items:center;">
                 <span style="font-size:var(--font-caption);color:var(--text-muted);font-family:'JetBrains Mono',monospace;" id="autoActionCount" aria-live="polite"></span>
+                <button class="btn btn-secondary" style="padding:0.35rem 0.75rem;font-size:var(--font-small);" onclick="popOutAutomation()" id="autoPopOutBtn" title="Open full view in new tab">Pop out</button>
                 <button class="btn btn-danger" style="padding:0.35rem 0.75rem;font-size:var(--font-small);" onclick="abortAutomation()" id="autoAbortBtn">Stop</button>
                 <button class="btn btn-secondary" style="padding:0.35rem 0.75rem;font-size:var(--font-small);" onclick="closeAutoPanel()">Hide</button>
             </div>
         </div>
         <div class="auto-panel-body">
-            <div class="auto-screenshot" id="autoScreenshot" aria-label="Automation screenshot">
-                <div class="placeholder">Waiting for screenshot...</div>
+            <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
+                <div id="autoConfirmBox" style="display:none;margin:0.5rem 0.75rem 0;padding:0.75rem;border:1px solid var(--warning,#e6a700);border-radius:8px;background:rgba(230,167,0,0.08);">
+                    <div style="font-weight:600;margin-bottom:0.35rem;">Confirmation required</div>
+                    <div id="confirmActionDesc" style="font-size:var(--font-small);color:var(--text-muted);margin-bottom:0.6rem;word-break:break-word;"></div>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn btn-primary" style="padding:0.35rem 0.9rem;font-size:var(--font-small);" onclick="confirmPendingAction(true)">Approve &amp; continue</button>
+                        <button class="btn btn-secondary" style="padding:0.35rem 0.9rem;font-size:var(--font-small);" onclick="confirmPendingAction(false)">Decline</button>
+                    </div>
+                </div>
+                <div class="auto-screenshot" id="autoScreenshot" aria-label="Automation screenshot">
+                    <div class="placeholder">Waiting for screenshot...</div>
+                </div>
             </div>
             <div class="auto-log" id="autoLog" role="log" aria-label="Automation action log" aria-live="polite">
                 <div class="auto-log-title">Action Log</div>
@@ -1448,6 +1485,8 @@
         let currentWorkflowId = null;
         let autoPollInterval = null;
         let currentSiteDomain = null;
+        let workflowFinished = false;
+        const PANEL_HEIGHT_KEY = 'bharatgov.panelHeight';
 
         async function startAutomation(domain, task) {
             closeModal();
@@ -1477,7 +1516,10 @@
 
         function showAutoPanel(domain, url) {
             const panel = document.getElementById('autoPanel');
+            const savedH = parseInt(localStorage.getItem(PANEL_HEIGHT_KEY), 10);
+            if (savedH >= 220) panel.style.setProperty('--panel-h', Math.min(savedH, Math.round(window.innerHeight * 0.92)) + 'px');
             panel.classList.add('active');
+            workflowFinished = false;
             document.getElementById('autoPanelTitle').textContent = domain;
             document.getElementById('autoStatusBadge').textContent = 'Starting';
             document.getElementById('autoStatusBadge').className = 'auto-status-badge status-running';
@@ -1485,6 +1527,12 @@
             document.getElementById('autoScreenshot').innerHTML = '<div class="placeholder">Launching browser...</div>';
             document.getElementById('autoLog').innerHTML = '<div class="auto-log-title">Action Log</div>';
             document.getElementById('autoAbortBtn').disabled = false;
+            document.getElementById('autoPopOutBtn').disabled = false;
+        }
+
+        function popOutAutomation() {
+            if (!currentWorkflowId) return;
+            window.open(`/automation/${encodeURIComponent(currentWorkflowId)}`, '_blank', 'noopener');
         }
 
         function startAutoPoll() {
@@ -1493,8 +1541,17 @@
             pollAutomation();
         }
 
+        function stopAutoPoll() {
+            if (autoPollInterval) {
+                clearInterval(autoPollInterval);
+                autoPollInterval = null;
+            }
+            workflowFinished = true;
+            document.getElementById('autoAbortBtn').disabled = true;
+        }
+
         async function pollAutomation() {
-            if (!currentWorkflowId) return;
+            if (!currentWorkflowId || workflowFinished) return;
 
             try {
                 const res = await fetch(`/api/automate/${currentWorkflowId}`);
@@ -1513,10 +1570,25 @@
                     badge.className = 'auto-status-badge status-completed';
                 } else if (wf.status === 'failed' || wf.status === 'aborted') {
                     badge.className = 'auto-status-badge status-failed';
-                } else if (wf.status.includes('waiting')) {
+                } else if (wf.status.includes('waiting') || wf.status === 'ready_for_confirmation' || wf.status === 'ready_for_submission') {
                     badge.className = 'auto-status-badge status-waiting';
                 } else {
                     badge.className = 'auto-status-badge status-running';
+                }
+
+                // Confirmation gate UI — approve or decline the pending action
+                const confirmBox = document.getElementById('autoConfirmBox');
+                if (confirmBox) {
+                    if (wf.status === 'ready_for_confirmation' && wf.pending_action) {
+                        const pa = wf.pending_action;
+                        document.getElementById('confirmActionDesc').textContent =
+                            `${pa.action}${pa.target_ref ? ' on ' + pa.target_ref : ''}` +
+                            (pa.value_ref ? ` (${pa.value_ref})` : '') +
+                            (pa.reason ? ` — ${pa.reason}` : '');
+                        confirmBox.style.display = 'block';
+                    } else {
+                        confirmBox.style.display = 'none';
+                    }
                 }
 
                 // Update action count
@@ -1529,29 +1601,30 @@
                 wf.actions.forEach(a => {
                     const cls = a.success ? 'success' : 'failed';
                     logHtml += `<div class="auto-log-entry ${cls}">
-                        <div class="log-action">${a.type} ${a.target || ''}</div>
-                        <div class="log-msg">${a.message}</div>
+                        <div class="log-action">${escapeHtml(a.type)} ${escapeHtml(a.target || '')}</div>
+                        <div class="log-msg">${escapeHtml(a.message)}</div>
                     </div>`;
                 });
                 if (wf.checkpoints && wf.checkpoints.length) {
                     wf.checkpoints.forEach(cp => {
                         logHtml += `<div class="auto-log-entry info">
                             <div class="log-action">Checkpoint</div>
-                            <div class="log-msg">${cp}</div>
+                            <div class="log-msg">${escapeHtml(cp)}</div>
                         </div>`;
                     });
                 }
                 if (wf.error) {
                     logHtml += `<div class="auto-log-entry failed">
                         <div class="log-action">Error</div>
-                        <div class="log-msg">${wf.error}</div>
+                        <div class="log-msg">${escapeHtml(wf.error)}</div>
                     </div>`;
                 }
                 logEl.innerHTML = logHtml;
                 logEl.scrollTop = logEl.scrollHeight;
 
-                // Update screenshot
-                if (wf.screenshot_count > 0) {
+                // Update screenshot — only while the run is live; once the
+                // backend task has exited no new screenshots can arrive.
+                if (wf.screenshot_count > 0 && !wf.finished) {
                     const imgEl = document.getElementById('autoScreenshot');
                     if (!imgEl.querySelector('img') || imgEl.querySelector('.placeholder')) {
                         imgEl.innerHTML = `<img src="/api/automate/${currentWorkflowId}/screenshot?step=latest" alt="Automation screenshot" />`;
@@ -1561,11 +1634,13 @@
                     }
                 }
 
-                // Stop polling if finished
-                if (['completed', 'failed', 'aborted'].includes(wf.status)) {
-                    clearInterval(autoPollInterval);
-                    autoPollInterval = null;
-                    document.getElementById('autoAbortBtn').disabled = true;
+                // Stop polling once the background task has exited. This
+                // covers every terminal status, including waiting_for_user /
+                // waiting_for_captcha / waiting_for_auth / ready_for_submission
+                // where the browser is already stopped. ready_for_confirmation
+                // keeps finished=false so the confirm gate stays live.
+                if (wf.finished) {
+                    stopAutoPoll();
                 }
             } catch (e) {
                 console.error('Poll error:', e);
@@ -1579,9 +1654,79 @@
             } catch (e) {}
         }
 
+        async function confirmPendingAction(approved) {
+            if (!currentWorkflowId) return;
+            try {
+                await fetch(`/api/automate/${currentWorkflowId}/confirm`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ approved }),
+                });
+                const box = document.getElementById('autoConfirmBox');
+                if (box) box.style.display = 'none';
+            } catch (e) {}
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function closeAutoPanel() {
             document.getElementById('autoPanel').classList.remove('active');
         }
+
+        // ── Panel resize (drag top edge; double-click resets) ──
+        (function initPanelResize() {
+            const panel = document.getElementById('autoPanel');
+            const handle = document.getElementById('autoResizeHandle');
+            let startY = 0;
+            let startH = 0;
+
+            function beginDrag(e) {
+                if (e.type === 'keydown') {
+                    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                    e.preventDefault();
+                    const current = panel.getBoundingClientRect().height;
+                    setHeight(current + (e.key === 'ArrowUp' ? 24 : -24));
+                    return;
+                }
+                startY = e.clientY;
+                startH = panel.getBoundingClientRect().height;
+                handle.classList.add('dragging');
+                document.body.classList.add('panel-resizing');
+                document.addEventListener('pointermove', onDrag);
+                document.addEventListener('pointerup', endDrag);
+            }
+
+            function onDrag(e) {
+                setHeight(startH + (startY - e.clientY));
+            }
+
+            function setHeight(h) {
+                const max = Math.round(window.innerHeight * 0.92);
+                h = Math.max(220, Math.min(h, max));
+                panel.style.setProperty('--panel-h', h + 'px');
+            }
+
+            function endDrag() {
+                handle.classList.remove('dragging');
+                document.body.classList.remove('panel-resizing');
+                document.removeEventListener('pointermove', onDrag);
+                document.removeEventListener('pointerup', endDrag);
+                const h = Math.round(panel.getBoundingClientRect().height);
+                localStorage.setItem(PANEL_HEIGHT_KEY, String(h));
+            }
+
+            handle.addEventListener('pointerdown', beginDrag);
+            handle.addEventListener('keydown', beginDrag);
+            handle.addEventListener('dblclick', () => {
+                panel.style.removeProperty('--panel-h');
+                localStorage.removeItem(PANEL_HEIGHT_KEY);
+            });
+        })();
 
         // ══════════════════════════════════════════════════════════
         // INIT

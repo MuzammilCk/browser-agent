@@ -7,6 +7,7 @@ with detailed task descriptions for each portal.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -1916,6 +1917,10 @@ class TrustedDomainRegistry:
         self._domains: dict[str, DomainEntry] = {}
         self._load_defaults()
 
+    def list_states(self) -> list[str]:
+        """List all states that have registered portals (sorted)."""
+        return sorted({e.state for e in self._domains.values() if e.state})
+
     def _load_defaults(self) -> None:
         """Load default trusted government domains."""
         all_portals = _CENTRAL_PORTALS + _STATE_PORTALS
@@ -2085,3 +2090,44 @@ class TrustedDomainRegistry:
 
     def __contains__(self, domain: str) -> bool:
         return domain in self._domains
+
+
+# ============================================================
+# Task instruction sanitization (audit C6)
+# ============================================================
+
+# Sentence-level patterns for steps the safety policy forbids automating.
+# The PolicyEngine pauses for CAPTCHA/OTP/payment regardless, but letting
+# the planner read "Solve the CAPTCHA..." instructions wastes iterations
+# and invites creative circumvention attempts.
+_MANUAL_STEP_PATTERN = re.compile(
+    r"(?:captcha|recaptcha|\botp\b|one[- ]time (?:password|code)|"
+    r"security code|verification code|enter the otp|solve the captcha)",
+    re.IGNORECASE,
+)
+
+_MANUAL_STEP_NOTE = (
+    "Note: CAPTCHA/OTP/verification steps are completed manually by the "
+    "user — skip them and wait at that point."
+)
+
+
+def sanitize_task_instructions(instructions: str) -> str:
+    """Remove CAPTCHA/OTP automation steps from task instructions.
+
+    Splits the instructions into sentences and drops any sentence that
+    instructs solving a CAPTCHA or entering an OTP, then appends an
+    explicit note that those steps belong to the user. Sentences that
+    merely mention a later OTP step contextually are also dropped —
+    over-filtering here is safe because policy pauses anyway.
+    """
+    if not instructions:
+        return instructions
+
+    parts = re.split(r"(?<=[.!?])\s+|\s*\n+\s*", instructions)
+    kept = [p.strip() for p in parts if p.strip() and not _MANUAL_STEP_PATTERN.search(p)]
+
+    cleaned = " ".join(kept)
+    if cleaned != instructions.strip():
+        cleaned = (cleaned + " " + _MANUAL_STEP_NOTE).strip()
+    return cleaned

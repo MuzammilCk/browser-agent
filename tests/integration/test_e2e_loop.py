@@ -37,6 +37,7 @@ from app.models.page_state import (
 )
 from app.models.workflow_state import WorkflowState, WorkflowStatus
 from app.policy.engine import PolicyEngine
+from app.vault.resolver import UserVault
 
 
 # ============================================================
@@ -318,8 +319,9 @@ class TestAgentLoopE2E:
                 domain="scholarships.gov.in",
             )
 
-        # Should stop at CAPTCHA (detected by runner, not executor)
-        assert workflow.status == WorkflowStatus.WAITING_FOR_AUTH
+        # Should stop at CAPTCHA (detected by runner, not executor).
+        # Audit C10: CAPTCHA now gets its own precise status.
+        assert workflow.status == WorkflowStatus.WAITING_FOR_CAPTCHA
         assert "captcha" in workflow.checkpoints
 
     @pytest.mark.asyncio
@@ -361,7 +363,10 @@ class TestAgentLoopE2E:
                     result.message = "OK"
                     return result
 
-                runner = AgentRunner(llm=None, max_iterations=5)
+                runner = AgentRunner(
+                    llm=None, max_iterations=5,
+                    vault=UserVault(full_name="Test User"),
+                )
                 with patch.object(runner._executor, "execute", side_effect=mock_execute):
                     workflow = await runner.run(mock_page, task="Test recording")
 

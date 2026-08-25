@@ -25,7 +25,7 @@ class TestDocumentPolicy:
     def test_valid_pdf_upload(self):
         policy = DocumentPolicy()
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-            f.write(b"test content")
+            f.write(b"%PDF-1.4 test content")
             path = f.name
         try:
             result = policy.validate_upload(path, "aadhaar")
@@ -36,7 +36,7 @@ class TestDocumentPolicy:
     def test_invalid_extension(self):
         policy = DocumentPolicy()
         with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as f:
-            f.write(b"test content")
+            f.write(b"%PDF-1.4 test content")
             path = f.name
         try:
             result = policy.validate_upload(path, "aadhaar")
@@ -48,7 +48,7 @@ class TestDocumentPolicy:
     def test_photo_jpg_allowed(self):
         policy = DocumentPolicy()
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(b"test content")
+            f.write(b"\xff\xd8\xff\xe0 jpeg-content")
             path = f.name
         try:
             result = policy.validate_upload(path, "photo")
@@ -59,7 +59,7 @@ class TestDocumentPolicy:
     def test_income_cert_only_pdf(self):
         policy = DocumentPolicy()
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(b"test content")
+            f.write(b"\xff\xd8\xff\xe0 jpeg-content")
             path = f.name
         try:
             result = policy.validate_upload(path, "income_certificate")
@@ -75,9 +75,9 @@ class TestDocumentPolicy:
 
     def test_file_too_large(self):
         policy = DocumentPolicy()
-        # Create a file larger than 2MB limit for photos
+        # Create a file larger than 2MB limit for photos (valid JPEG header)
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(b"x" * (3 * 1024 * 1024))  # 3MB
+            f.write(b"\xff\xd8\xff\xe0" + b"x" * (3 * 1024 * 1024))  # 3MB
             path = f.name
         try:
             result = policy.validate_upload(path, "photo")
@@ -89,11 +89,24 @@ class TestDocumentPolicy:
     def test_normal_file_size_ok(self):
         policy = DocumentPolicy()
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-            f.write(b"x" * 1000)  # 1KB
+            f.write(b"%PDF-1.4 " + b"x" * 1000)  # ~1KB valid PDF header
             path = f.name
         try:
             result = policy.validate_upload(path, "aadhaar")
             assert result.allowed is True
+        finally:
+            os.unlink(path)
+
+    def test_renamed_exe_as_pdf_blocked_by_magic_bytes(self):
+        """Audit B7/C12: content contradicting the extension is blocked."""
+        policy = DocumentPolicy()
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(b"MZ\x90\x00 fake executable renamed to pdf")
+            path = f.name
+        try:
+            result = policy.validate_upload(path, "aadhaar")
+            assert result.allowed is False
+            assert "renamed" in result.reason or "does not match" in result.reason
         finally:
             os.unlink(path)
 
@@ -161,3 +174,4 @@ class TestTrustedDomainRegistry:
         registry = TrustedDomainRegistry()
         assert "pmkisan.gov.in" in registry
         assert "unknown.com" not in registry
+

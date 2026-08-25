@@ -59,3 +59,17 @@ async def index() -> HTMLResponse:
             "Expires": "0",
         },
     )
+
+
+@app.get("/automation/{workflow_id}", response_class=HTMLResponse)
+async def automation_view(workflow_id: str) -> HTMLResponse:
+    """Full-page automation monitor (opened via the panel's Pop out button)."""
+    html = (FRONTEND_DIR / "automation.html").read_text(encoding="utf-8")
+    return HTMLResponse(
+        content=html,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )

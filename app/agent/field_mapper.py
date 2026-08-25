@@ -428,6 +428,12 @@ class FieldMapper:
             acc_name = (element.accessible_name or "").lower()
             if best_kw == acc_name or best_kw == text:
                 score = 1.0
+            elif best_kw.split() and set(best_kw.split()) <= set(acc_name.split()):
+                # Keyword tokens fully appear in the accessible name —
+                # a qualified label like "Applicant Full Name" still fully
+                # contains "full name". Score stays high instead of being
+                # diluted by the extra qualifier word.
+                score = 0.85 + 0.15 * (len(best_kw) / max(len(acc_name), 1))
             elif best_kw in acc_name:
                 score = 0.6 + 0.2 * (len(best_kw) / max(len(acc_name), 1))
             else:

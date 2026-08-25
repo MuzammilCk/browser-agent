@@ -58,6 +58,13 @@ class Settings(BaseSettings):
         description="Database connection URL",
     )
     log_level: str = Field(default="INFO", description="Logging level")
+    api_token: str = Field(
+        default="",
+        description=(
+            "Bearer token required on /api/* endpoints. Empty disables auth "
+            "(localhost dev only). Set before any non-localhost exposure."
+        ),
+    )
 
     # Browser
     headless: bool = Field(default=True, description="Run browser in headless mode")
@@ -65,9 +72,23 @@ class Settings(BaseSettings):
         default="test",
         description="Browser mode: 'test' (headless, automated) or 'user' (visible, interactive)",
     )
+    ignore_https_errors: bool = Field(
+        default=True,
+        description="Ignore TLS certificate errors (some gov portals have chain issues). "
+        "Disable for stricter MITM protection.",
+    )
     vision_fallback_enabled: bool = Field(
         default=True,
         description="Enable screenshot-based vision fallback when semantic perception is insufficient",
+    )
+
+    # Uploads
+    document_allowed_dirs: list[Path] = Field(
+        default_factory=list,
+        description=(
+            "Directories upload files must live under. Empty disables "
+            "confinement (documents may come from anywhere the user registered)."
+        ),
     )
 
     # Paths

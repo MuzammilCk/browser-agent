@@ -1,233 +1,225 @@
-# Browser Agent — Form-Filling & Browser Automation Audit
+# Browser Agent — Full Audit (Form-Filling & Browser Automation)
+
+> **REMEDIATION STATUS (Aug 25, 2026):** All findings below marked with a fix
+> ID have been remediated and verified by the full test suite (**374 passed,
+> 0 failed**) plus a live end-to-end confirmation-flow smoke test against real
+> Chromium. See "Remediation log" at the bottom of this document.
 
 **Repo:** github.com/MuzammilCk/browser-agent
-**Commit audited:** `b5bf64d` — "feat: comprehensive Indian government portal registry + redesigned frontend" (latest on `main` as of Aug 24, 2026)
-**Method:** Full clone, dependency install, live Playwright/Chromium execution, full test suite run, line-by-line reading of every module in `app/agent/`, `app/browser/`, `app/vault/`, `app/policy/`, `app/models/actions.py`, `app/sites/`, `app/api/`, `app/frontend/`. Findings below are traced to exact files/lines and, where relevant, reproduced live — this is not a docs-only review.
-**Scope:** Form-filling pipeline (field mapping → vault resolution → policy gating) and browser automation (perception → locate → execute → verify). API/frontend and LLM layers are covered only where they intersect these two.
+**Commit audited:** `71d2043` — "feat: enhance task instructions, Windows event loop handling, and runner entrypoint" (latest on `main` as of Aug 25, 2026)
+**Method:** Full local checkout, dependency install (Playwright 1.62.0, Python 3.14.6), full test suite run against live headless Chromium, line-by-line reading of every module under `app/` plus `run.py`, `tests/`, and the frontend. Prior audit of commit `b5bf64d` was re-verified finding-by-finding against the two commits landed since.
+**Scope:** Full system — form-filling pipeline (perception → mapping → planning → policy → execution → verification), browser automation layer, vault/policy/LLM layers, API/frontend product surface, configuration, and tests.
 
 ---
 
 ## 1. Test baseline
 
 ```
-327 passed, 1 failed in 67.4s   (328 tests total)
+3 failed, 325 passed in 177s   (328 tests total)
 ```
 
-The one failure is real and is Finding B1 below — not a flaky test. Everything else genuinely passes against a live headless Chromium instance I installed in the sandbox (not mocked).
+All three failures are understood and traced to specific code changes — none are flaky:
+
+| Failing test | Root cause |
+|---|---|
+| `test_executor.py::TestClickAction::test_click_button` | Clicks a "Submit Application" button → now correctly classified `HIGH_RISK` → executor refuses (`REQUIRE_CONFIRMATION`). **The safety gate works; the test predates it and still asserts `success is True`.** |
+| `test_executor.py::TestPressAction::test_press_tab` | B4 fix added `verify_press`; a Tab press on a static page produces no observable change → `UNCERTAIN` → executor marks `success=False`. Test not updated. |
+| `test_observer.py::TestSimpleForm::test_page_observation_has_aria_snapshot` | Real regression — see Finding C3. `aria_snapshot` is empty on every page again due to a bug in the B1 fix itself. |
+
+The suite is green-masking nothing anymore — if anything it is now *under*-asserting in the other direction: there are **no tests at all** for `AgentRunner.resume()`, `pending_action`, or the confirmation-halt path (grep confirms zero matches outside `test_policy.py`'s engine-level checks).
 
 ---
 
 ## 2. Executive summary
 
-The core engine is well-architected and mostly does what its own docs claim: one atomic browser action per loop iteration, deterministic-first field mapping with LLM fallback only for ambiguity, PII kept out of LLM prompts via reference indirection (`USER.full_name` instead of raw values), and a policy engine that classifies every action by risk before it runs. Since my last look at this repo, the team shipped a large refactor (verifiers split into one-file-per-action-type, a dedicated `planner.py`, a regex-based prompt-injection sanitizer) that measurably improved code organization and closed some gaps.
+Since the last audit (`b5bf64d`), every one of the seven prior findings has had a fix attempted, and most are genuinely fixed: REQUIRE_CONFIRMATION now halts in both the runner and the executor (`B2`), fill verification checks vault-resolved values (`B3`), `press`/`go_back` have verifiers (`B4`), `BrowserManager.open()` enforces the trusted-domain registry (`B5`), the vault supports Fernet encryption at rest (`B6`), document uploads get magic-byte validation (`B7`), and the engine is finally reachable from the UI through real `/api/automate` endpoints.
 
-But four things below are load-bearing enough to call out before this touches a real government site with real Aadhaar/PAN data:
+But the fixes were applied at the component level without re-checking the cross-component contracts this project's own remediation spec says are the whole game. The result:
 
-1. **The confirmation checkpoint for sensitive/high-risk actions still doesn't stop execution.** It sets a status flag and proceeds anyway — in both places that check it.
-2. **Verification of filled data silently skips the exact case that matters most** — fields filled via the vault (`value_ref`), which is the sensitive-data path, aren't checked against the live DOM at all; only the low-stakes `literal_value` path is.
-3. **The vault (Aadhaar, PAN, bank account, IFSC) is stored as plaintext JSON on disk.** Nothing in the system sends this to an LLM, but nothing protects it at rest either.
-4. **The default LLM is now an anonymous, free, ~1-week "stealth preview" model** with a contested data-retention policy, per public reporting — a meaningfully different trust profile for a tool whose entire premise is careful PII handling.
+1. **The confirmation gate halts correctly but can never be resumed.** `resume(approved=True)` sends the exact same sensitive action back through the executor's own policy gate, which refuses it again. And no API endpoint or UI code calls `resume()` at all. Net effect: any workflow containing one sensitive field (DOB, mobile, Aadhaar…) runs until that field and stops forever. The flagship fix is inert end-to-end.
+2. **The vault is not wired into the runtime.** The API's automation flow constructs `AgentRunner` → `BrowserExecutor()` with an *empty* `UserVault`. Every `value_ref` fill resolves to `None` and fails. Separately, `VaultManager` reads `os.environ.get("VAULT_ENCRYPTION_KEY")` while the new `Settings.vault_encryption_key` field (loaded from `.env`) is never passed to it — setting the key in `.env` silently does nothing.
+3. **A real regression: ARIA snapshots are empty again.** The B1 fix introspects Playwright's signature correctly but then passes `mode=True` (a boolean) where the driver requires `"ai"|"default"`. Every snapshot fails server-side and returns `""`.
+4. **The test suite was not updated for the new safety semantics** — 3 failures, all caused by correct new behavior or the C3 regression, and the most important new behavior (confirmation pause/resume) has zero coverage.
 
-None of these are exotic to find — #1 and #2 are visible from reading two adjacent functions; #3 and #4 are one grep and one search away. They're not called out anywhere in the project's own `SAFETY.md` or `MILESTONES.md`, which is the main reason to write them down now.
-
----
-
-## PART A — Browser Automation Layer
-
-### A1. Perception (`app/browser/dom.py`, `observer.py`, `aria.py`)
-
-**Architecture:** `PageObserver.observe(page)` runs a hand-written JS accessibility-tree walk (`dom.py`, `page.evaluate()`) to build the structured `ElementState` list that everything downstream (mapping, policy, execution, verification) actually acts on. This is solid and version-independent — it doesn't lean on any particular Playwright API surface.
-
-**Finding B1 — `aria_snapshot()` always fails silently (confirmed, still present).**
-`app/browser/aria.py` calls:
-```python
-snapshot = await body.aria_snapshot(mode="ai", refs=True)   # extract_aria_snapshot_with_refs
-```
-The installed Playwright (1.56.0, satisfies the `>=1.50.0,<2.0.0` pin in `pyproject.toml`) only accepts `timeout`:
-```
-TypeError: Locator.aria_snapshot() got an unexpected keyword argument 'mode'
-```
-Both the primary call and its `TypeError` fallback (which still passes `mode="ai"`) fail, get caught by a broad `except Exception`, and `PageObservation.aria_snapshot` is silently `""` on every single page load. I reproduced this directly outside pytest too — real accessibility tree in, empty string out.
-
-**Practical impact — smaller than it looks, but not zero:**
-- `ElementState` extraction (the thing that actually drives the agent) doesn't touch this field, confirmed by grep — so mapping, policy, execution, and locator resolution are unaffected.
-- It **is** read in `app/browser/vision.py:86` as one completeness signal (`thin_aria_snapshot` fires whenever `len(aria_snapshot) < 50`) — which, since it's always `""`, now fires on *every* page, nudging the vision-fallback trigger logic slightly more often than intended. It's one signal among several, not a sole trigger, so this degrades rather than breaks that subsystem.
-- It's also the one field the LLM prompt in `planner.py` does *not* include (only the structured `elements_info`/`bindings_info` JSON is sent) — so this bug currently costs "thin_aria_snapshot" noise and nothing else, not reasoning quality.
-
-**Fix is mechanical:** introspect `inspect.signature(locator.aria_snapshot)` once and only pass kwargs the installed driver actually accepts, instead of hardcoding a `mode="ai"` call and one fixed fallback. I wrote and verified this fix locally (not pushed) — happy to hand it over.
-
-### A2. Locating elements (`app/browser/locator.py`)
-
-Layered strategy: resolve by `ref` → verify against current `PageState` (rejects refs from a stale/different observation) → fall back through role+name, `label`, `placeholder`, CSS-ish heuristics. This general "try progressively looser strategies, but always validate against the *current* structured state first" shape is the right one for an environment where the DOM can shift between observation and action. No issues found here beyond what's noted in A4 below.
-
-### A3. Execution (`app/browser/executor.py`)
-
-**Finding B2 — Confirmation-required actions execute anyway. Confirmed present on the current commit, in two places, after a full runner rewrite.**
-
-`policy/engine.py` classifies every action `ALLOW / DENY / REQUIRE_CONFIRMATION / PAUSE_FOR_USER`. Aadhaar/PAN/DOB fills → `SENSITIVE`; payment and final-submission clicks → `HIGH_RISK`; both map to `REQUIRE_CONFIRMATION`. `SAFETY.md`'s own R2/R4 rules describe this as a hard gate ("Mandatory explicit confirmation immediately before action").
-
-In `app/agent/runner.py`, the current (post-refactor) policy check is:
-```python
-def _check_policy(self, workflow: WorkflowState, policy_result) -> bool:
-    if policy_result.blocked:            # DENY
-        ...
-        return True                       # halts — correct
-    if policy_result.needs_user:          # PAUSE_FOR_USER (CAPTCHA/OTP/password)
-        ...
-        return True                       # halts — correct
-    if policy_result.needs_confirmation:  # SENSITIVE / HIGH_RISK
-        workflow.status = WorkflowStatus.READY_FOR_CONFIRMATION
-    return False                          # <-- does NOT halt
-```
-Returning `False` means `_run_iteration` proceeds straight to step 6 (EXECUTE) regardless. `DENY` and `PAUSE_FOR_USER` correctly stop the loop; `REQUIRE_CONFIRMATION` sets a status label and runs the action anyway. This is the same behavior the pre-refactor code had (previously spelled out with a `# For now, proceed — Phase C confirmation UI comes later` comment) — the November refactor reorganized the code without closing the gap.
-
-`app/browser/executor.py` has its own, independent copy of this same check (defense-in-depth, since `BrowserExecutor.execute()` can be called directly without going through the runner):
-```python
-if policy_result.needs_confirmation:
-    logger.warning("Policy REQUIRE_CONFIRMATION: %s — proceeding for now", ...)
-    # falls through to _do_execute() anyway
-```
-Same bug, independently.
-
-**I proved this isn't theoretical, not just a code-reading exercise.** `tests/integration/test_executor.py::TestClickAction::test_click_button` clicks the only button on the synthetic test form, labeled *"Submit Application."* `"submit"` is a `SUBMISSION_KEYWORDS` entry, so this click is classified `HIGH_RISK` → `REQUIRE_CONFIRMATION` by the engine's own rules — and the test passes today only because the confirmation gate is a no-op. The green test suite is currently masking the exact gap it should be catching.
-
-**Secondary bug from the same root cause:** `workflow.status` is set to `READY_FOR_CONFIRMATION` but nothing ever sets it back. If the auto-executed action succeeds, the loop continues normally while the status field keeps reporting "ready for confirmation" — a stale, misleading status for the rest of the run.
-
-**What a real fix needs (I built and locally verified this before switching to the audit — not yet pushed):**
-- Both check sites must actually halt (`break`/`return`) instead of falling through.
-- The specific pending action needs to be held somewhere (`WorkflowState.pending_action`) so a caller can present it and resume — not re-derived from scratch, since re-planning after a pause could produce a *different* action than the one the user was shown.
-- A `resume(page, workflow, approved: bool)` path that re-observes before replaying (never trust a paused snapshot), and — if declined — stops cleanly rather than guessing what to do next.
-
-### A4. Verification (`app/browser/verifiers/*`, refactored since last review)
-
-Good structural change: one file per action type (`fill.py`, `click.py`, `select.py`, `check.py`, `scroll.py`, `upload.py`) behind a small dispatch table in `verification.py`, each under 100 lines. `click.py`'s change-detection (URL/title/page_type/element-count/alerts/validation-errors/element-state/content-diff, in that order, `UNCERTAIN` if nothing matches) is a sensible, well-thought-out cascade.
-
-**Finding B3 — `verify_fill()` doesn't check the value for the sensitive-data path (new finding, not previously documented anywhere in the repo).**
-
-```python
-# app/browser/verifiers/fill.py
-expected_value = action.literal_value or ""
-if expected_value:
-    live_value = await _read_live_value(page, ref, target)
-    if live_value is not None and live_value.strip() != expected_value.strip():
-        return make_failure(...)
-```
-
-The system's own design (stated directly in `planner.py`'s LLM system prompt: *"Use value_ref... for sensitive fields. Use literal_value only for non-sensitive PUBLIC fields"*) means the highest-stakes fills — name, DOB, Aadhaar, PAN, bank details, all resolved through the vault via `value_ref` — arrive here with `action.literal_value == None`. `expected_value` is then `""`, the `if expected_value:` guard is false, and the live-DOM-value check is **skipped entirely** for exactly the fills that most need it. I traced this all the way through: `executor.py::_execute_fill()` resolves `value_ref` to a real string via `VaultResolver` and fills the field with it, but that resolved value is a local variable — it's never attached back to the `ActionResult` or threaded into the `verify()` call, which receives the original, unmodified `action` object.
-
-What still runs for a `value_ref` fill: element-still-present, not-disabled, no new validation errors, no new alerts. That's a reasonable proxy but not the same guarantee as "the Aadhaar field now contains the Aadhaar number" — e.g. a masked/formatted input that silently truncated or reformatted the value would sail through as `SUCCESS`.
-
-**Fix shape:** thread the resolved value back (e.g. `ActionResult.resolved_value`, set in `_execute_fill`, consumed by `verify_fill` in place of `action.literal_value`) so both fill paths get the same live-value check. The resolved value shouldn't go in logs or `ActionRecord.message` — just passed through this one call.
-
-**Finding B4 — Two action types skip verification by default, and one of them looks like the wrong default.**
-`_VERIFIERS` in `verification.py` covers `fill/click/select/check/uncheck/upload/scroll_to`. Not covered → auto-`SUCCESS`, "no verification needed": `press`, `wait`, `go_back`, `request_user_action`, `finish_review`, `stop`. `wait`/`stop`/`request_user_action`/`finish_review` are genuinely non-mutating control actions, so skipping them is fine. `press` and `go_back` are questionable: pressing Enter inside a form field can submit it, and `go_back` changes the URL and can discard unsaved form state — both are exactly the kind of state change the verification layer exists to catch, and today both get a free pass.
-
-### A5. Browser session & trust boundary (`app/browser/manager.py`, `app/sites/registry.py`)
-
-**Finding B5 — the (now very large) trusted-domain registry isn't wired to anything that enforces it.**
-
-`app/sites/registry.py` grew by **1,323 lines** in the latest commit into a genuinely comprehensive `TrustedDomainRegistry` — dozens of vetted `.gov.in` domains across central/state/district levels, each with per-task metadata (`requires_auth`, `requires_payment`, difficulty). Good, serious work. But:
-
-```python
-$ grep -rn "TrustedDomainRegistry" app/ --include="*.py"
-app/api/routes.py: ...          # read-only /api/sites, /api/search, /api/site/{domain}
-app/sites/registry.py: ...      # the class itself
-```
-
-That's the complete list. It's used exactly once, to power the new frontend's site directory/search — never in `policy/engine.py`, never in `browser/executor.py`, never in `agent/runner.py`. Most directly: `BrowserManager.open(url)` navigates to whatever URL it's given —
-```python
-async def open(self, url: str) -> Page:
-    await self.page.goto(url, wait_until="domcontentloaded")
-```
-— with no check against the registry at all. Nothing currently stops the agent from being pointed at, and starting to fill forms on, a domain that isn't in the (extensive) vetted list. The registry is a real asset sitting one function call away from being an actual access-control gate and currently isn't one.
+Also notable: the site registry's task instructions — which flow verbatim into the agent's LLM prompt — explicitly instruct the agent to *"Solve the CAPTCHA by typing the characters shown"* and *"Enter the OTP"*, directly contradicting the PolicyEngine's hard rule that CAPTCHA/OTP are user checkpoints.
 
 ---
 
-## PART B — Form-Filling Pipeline
+## PART A — Verification of prior findings (b5bf64d audit)
 
-### B1. Reference registry & field mapping (`app/agent/registry.py`, `field_mapper.py`)
+### B1 — `aria_snapshot()` kwargs — fix attempted, **regressed (now Finding C3)**
+`app/browser/aria.py` now introspects `inspect.signature(Locator.aria_snapshot)` once and builds kwargs from what the driver accepts. The mechanism is right; the value is wrong. `_build_snapshot_kwargs(mode=True)` emits `{"mode": True}` — the boolean `True`, not `"ai"` — so on Playwright 1.62 the driver rejects it (`mode: expected one of (ai|default)`), the broad `except Exception` swallows it, and `PageObservation.aria_snapshot` is `""` on every page. Blast radius unchanged from before: element extraction doesn't use it; `vision.py:86` (`thin_aria_snapshot`) fires on every page; one test fails.
 
-This is the strongest part of the codebase. `ReferenceRegistry` is a genuine single source of truth for every valid `USER.*`/`DOCUMENT.*` reference — the field mapper and the LLM planner both validate bindings against it, so a hallucinated reference like `USER.social_security_number` (not a real field) gets rejected rather than silently mishandled. `FieldMapper.map_fields()` runs cheap deterministic keyword/pattern matching first (label text, `name`/`id` attributes, `aria-label`, input type/pattern) and only escalates genuinely ambiguous or unmatched fields to the LLM, with the LLM's binding re-validated against the registry before it's trusted. This tiered design is the correct shape for cost, latency, and — more importantly — for keeping the LLM out of the loop on fields that don't need judgment calls.
+### B2 — Confirmation actions executed anyway — **fixed at both gates, but resume path broken (Finding C1)**
+- `runner.py::_check_policy` now stores `workflow.pending_action` + `pending_observation_id`, sets `READY_FOR_CONFIRMATION`, adds a checkpoint, and **halts** (returns True). Correct.
+- `executor.py::execute` independently returns without executing on `needs_confirmation`. Correct defense-in-depth for direct calls.
+- **But:** the stored pending action is a sensitive/high-risk action by definition. `runner.resume(approved=True)` reconstructs it and calls `_executor.execute(...)` — which evaluates policy again, gets `REQUIRE_CONFIRMATION` again, and returns `success=False, recovery_required=True`. There is no bypass flag, no `confirmed=True` parameter, nothing. An approved action can never execute. `resume()` also ignores its own fresh `policy_result` entirely (a DENY after state change would still attempt execution — moot today only because the executor blocks first).
+- Additionally, nothing in `app/api/routes.py` or `app/frontend/index.html` ever calls `resume()`. The workflow ends at `READY_FOR_CONFIRMATION` and the HTTP polling loop just displays it. The status is terminal in practice.
 
-**Since my last review:** `field_mapper.py` now also sends candidate field info through `PromptSanitizer.sanitize_elements()` before it reaches the LLM disambiguation prompt — consistent with the same sanitizer `planner.py` uses. Good, and correctly applied at both LLM call sites, not just one.
+### B3 — Fill verification skipped for vault fills — **fixed**
+`ActionResult.resolved_value` is set in `_execute_fill` and threaded into `verify_fill`, which now checks `resolved_value or action.literal_value` against the live DOM readback. Residual gaps (minor): `_read_live_value` resolves locators against the main page only — fills inside iframes aren't value-checked; a `None` live read still passes silently.
 
-### B2. Sensitivity classification (`app/vault/sensitivity.py`)
+### B4 — `press`/`go_back` unverified — **fixed**, with a behavioral cost (Finding C7)
+Both have verifiers now. Side effect: benign key presses (Tab) legitimately produce no DOM change → `UNCERTAIN` → executor converts to `success=False, recovery_required=True` → runner burns recovery attempts and can FAIL the workflow over a harmless Tab. One test failure is the visible symptom.
 
-Classifies every `USER.*`/`DOCUMENT.*` field into `PUBLIC / PII / SENSITIVE / CRITICAL` tiers (e.g. name/city → `PUBLIC`; Aadhaar/PAN/bank account → `SENSITIVE`/`CRITICAL`), and this tiering is what `policy/engine.py` keys off of to decide `REQUIRE_CONFIRMATION`. Straightforward, does what it says, no issues found.
+### B5 — TrustedDomainRegistry not enforced — **fixed at navigation entry only**
+`BrowserManager.open()` raises `DomainAccessError` for domains absent from the registry or marked `allowed=False` (with lazy loading and a fail-open sentinel if registry construction throws). Caveats: enforcement covers only explicit `open()` calls — clicks/forms inside the page can still navigate anywhere (inherent to a browser agent, worth documenting); `file://` and non-http schemes skip the check entirely; registry load failure fails open with a warning.
 
-### B3. Vault storage — data at rest (`app/vault/manager.py`, `resolver.py`)
+### B6 — Plaintext vault — **implemented, not wired (Finding C2) + weak KDF (Finding C9)**
+`VaultManager` encrypts with Fernet when a key is present, auto-detects encrypted files on load, and logs plaintext fallbacks. Two problems: (a) nothing in the runtime constructs `VaultManager` at all — the API flow uses an empty in-memory vault, so encryption protects a file nobody reads; (b) the key comes from raw `os.environ`, not from `Settings.vault_encryption_key`, so `.env` configuration is dead. Also `_derive_fernet_key` is a single unsalted SHA-256 — fine against casual reading, weak against a real attacker with the file; scrypt/PBKDF2/argon2 would be appropriate.
 
-The in-flight protection is real: raw values never appear in LLM prompts, only `USER.field_name`-style references do, and `VaultResolver` resolves them locally inside the executor.
+### B7 — Document MIME validation unenforced — **fixed**, path check is vacuous (Finding C8)
+Magic-byte sniffing now gates uploads per document type. But the "path safety" check compares `path.resolve()` against `path.parent.resolve()` with `is_relative_to` — always true, can never fire. It validates nothing; the original intent (confine uploads to an allowed root like `data/documents/`) is not implemented.
 
-**Finding B6 — but the vault itself is plaintext JSON on disk (new finding).**
+### Previously noted product gap — **closed**
+`POST /api/automate` looks up the domain in the registry, launches `BrowserManager` + `AgentRunner` in a background task, and exposes poll/screenshot/abort endpoints. The frontend drives them with live status, action log, and screenshots. The engine is now reachable end-to-end — subject to Findings C1/C2 below, which make real form-filling impossible through this path.
+
+---
+
+## PART B — New findings
+
+### C1 (High — safety/product-critical): The confirmation flow is a dead end
+Three compounding defects:
+1. `resume(approved=True)` cannot execute the approved action (double-gating, detailed above). Fix shape: pass an explicit `skip_confirmation=True`/`confirmed_action=True` to `executor.execute()` from `resume()` only, and honor a fresh `policy_result.blocked` (state may have changed during the pause).
+2. No API/UI surface calls `resume()`; there is no approve/decline endpoint. The frontend shows `ready_for_confirmation` as a terminal badge.
+3. `resume()` executes exactly one action and returns — despite a comment claiming "Continue the normal loop from here". There is no re-entry into the observe→plan→execute loop preserving the same `WorkflowState` (`run()` always creates a fresh one).
+
+Until this is fixed, the system's central safety feature converts every realistic government form (all require DOB/mobile/Aadhaar) into a guaranteed stall at the first sensitive field.
+
+### C2 (High): Vault is disconnected from the runtime
+- `routes.py::_run_automation` builds `AgentRunner(llm=llm)` → `BrowserExecutor(policy_engine=...)` → `ValueResolver(UserVault())` — **empty**. Every planned `fill` with a `value_ref` returns "No value provided (value_ref unresolved)". Deterministic planner only ever emits `value_ref` fills, so through the API the agent cannot fill anything, ever.
+- `VaultManager` reads `os.environ["VAULT_ENCRYPTION_KEY"]`; `Settings.vault_encryption_key` (from `.env`) is never consumed by app code. Same class of disconnect.
+- Fix shape: construct `VaultManager(settings.data_dir / "vault")` in the API layer (or runner), call `set_vault(manager.vault)` / `set_document_registry(manager.registry)` on the executor, and route the encryption key through Settings.
+
+### C3 (Medium–High): ARIA snapshot regression — `mode=True`
+As described in Part A/B1. One-line-class fix: map hints to proper values (`mode="ai"` when the param exists), e.g. `kwargs = {"mode": "ai"} if "mode" in _supported_snapshot_kwargs else {}`. Add a unit test asserting the built kwargs values, not just keys.
+
+### C4 (Medium): Deterministic planner's select logic is wrong
+`plan_deterministic` handles comboboxes with:
 ```python
-# app/vault/manager.py
-def save_vault(self, vault: UserVault | None = None) -> None:
-    vault_path = self.vault_dir / "user_vault.json"
-    vault_path.write_text(vault.model_dump_json(indent=2), encoding="utf-8")
+if el.ref == binding.field_ref and el.selected_options:
+    return BrowserAction(action="select", ..., option=el.selected_options[0], ...)
 ```
-`data/vault/user_vault.json` holds full name, DOB, Aadhaar number, PAN number, bank account number, IFSC code — unencrypted, in a directory with no special permissions set (`vault_dir.mkdir(parents=True, exist_ok=True)`, no `chmod`). The careful work keeping this data away from the LLM doesn't extend to protecting the file itself — anything with filesystem access (another process, a backup job, a misconfigured sync tool) reads it in the clear. Worth deciding deliberately (OS keychain, `Fernet`/age-style encryption with a passphrase, or at minimum restrictive file permissions + an explicit README warning) rather than by omission, especially before any real Aadhaar data goes anywhere near it.
+It acts only when something is *already selected* and then re-selects the current value — a no-op that will fail click-style verification ("content changed") and can loop/retry. It never consults the binding (`USER.state` etc.) or the vault. Checkboxes similarly always emit `check` regardless of desired state. Correct shape: resolve `binding.binding` via `ValueResolver` and select that option text (or report unmappable). Today this path mostly matters for LLM-less runs, but the LLM prompt also gives the planner no resolved values to select with — `select_option(label=...)` requires exact label match against page text, which vault values like "Male" vs "MALE" will frequently miss.
 
-Minor, related: `VaultManager.create_sample_vault()` seeds a complete, realistic-looking Indian identity (name, Aadhaar-shaped number, PAN-shaped number, bank details) for dev/testing convenience. Fine as a fixture; worth a one-line comment making clear it's synthetic, since it's easy to mistake for real data six months from now.
+### C5 (Medium): Abort is a no-op; background-task hygiene
+`POST /api/automate/{id}/abort` sets `wf["status"] = "aborted"` and returns. Nothing cancels the running task: `_run_automation` keeps driving the browser and later overwrites the status with `workflow_state.status.value`, resurrecting the aborted workflow. Related issues in the same endpoint family:
+- `asyncio.create_task(_run_automation(...))` result is not referenced — schedulable tasks can be garbage-collected mid-flight (CPython docs warning); keep a strong ref / task registry.
+- Screenshots accumulate as hex strings in `_workflows` forever (unbounded memory); no eviction, no cap.
+- Polling returns `actions` list unbounded; fine for now, same growth story.
 
-### B4. Document upload policy (`app/policy/document_policy.py`)
+### C6 (Medium): Registry task instructions contradict the safety policy
+`sites/registry.py` task `instructions` fields (e.g., UIDAI "Download Aadhaar": *"Solve the CAPTCHA by typing the characters shown… Enter the 6-digit OTP…"*) become `task_description` → the LLM planner's system prompt. The PolicyEngine will still PAUSE_FOR_USER at those pages (good — runtime gate wins), but the prompt actively coaches the model toward behavior the architecture forbids, wasting iterations and inviting creative circumvention attempts. Fix: strip/annotate CAPTCHA/OTP/payment steps from instructions programmatically, or mark them "user handles this step".
 
-Checks extension against an allow-list per document type, file size against per-type limits, and a resolved-path containment check before allowing an upload to proceed to the executor.
+### C7 (Low–Medium): UNCERTAIN press semantics burn the recovery budget
+Any `press` that produces no visible change (Tab, arrow keys, Escape closing nothing) is `UNCERTAIN` → `recovery_required=True` → up to 3 wasted retry cycles → workflow FAILED. Consider treating control-key presses with no change as SUCCESS-with-note, or exempting non-Enter keys from the strict rule.
 
-**Finding B7 — the module documents MIME validation as a feature; it isn't actually enforced (new finding).**
-The docstring says *"MIME type validation"* and `ALLOWED_MIMES` is fully populated per document type (`{"aadhaar": ["application/pdf", "image/jpeg", "image/png"], ...}`) — but `validate_upload()` never reads `self.allowed_mimes` anywhere in its body. Only the file **extension** is checked, which is trivially spoofable (rename `payload.exe` to `payload.pdf` and the extension check passes). This is dead configuration, not a logic bug — the dict is right there, just never consulted. A real fix needs actual content sniffing (magic bytes via `python-magic` or `filetype`, not just `Content-Type`/extension) since extension and reported MIME are both attacker-controlled.
+### C8 (Low): Vacuous path-containment check in `DocumentPolicy`
+`resolved.is_relative_to(path.parent.resolve())` is tautologically true. Implement the intended check: resolve and compare against a configured allowed root (e.g. `settings.docs_dir`), passed in as a parameter.
 
-Lower-severity, same file: the path-containment check (`str(resolved).startswith(str(path.parent.resolve()))`) has the classic string-prefix pitfall — a sibling directory like `uploads_evil/` would satisfy `startswith("uploads")` — but since `file_path` here comes from `DocumentRef` resolution (not directly from web/LLM-controlled input), the practical exploitability is low. Flagging for completeness, not urgency.
+### C9 (Low): Weak KDF for vault encryption
+Single unsalted SHA-256 passphrase → Fernet key. Use `cryptography.hazmat.primitives.kdf.scrypt`/PBKDF2 with a stored random salt. Low urgency while the vault is unwired (C2), high relevance once real data lands.
 
-### B5. Action schema validation (`app/models/actions.py`)
+### C10 (Low): Dead configuration & unreachable features
+Inventory of things that exist but do nothing (each verified by grep):
+- `Settings.openrouter_vision_model` — gateway always uses `openrouter_model`, even for `images=` requests.
+- `Settings.openrouter_fallback_model` — `RetryPolicy` retries the same model; no fallback switch anywhere.
+- `vision.py::assess_completeness` / `capture_screenshot_for_fallback` — never called from runner/planner; vision fallback (audit issue #30) remains trigger-without-integration. Only `tests/unit/test_vision.py` touches it.
+- `ReferenceRegistry.llm_visible` (never set False → `visible_only=True` filters nothing) and `confirmation_policy` (always "none", never consulted).
+- `WorkflowStatus.COMPLETED` and `WAITING_FOR_CAPTCHA` are never set by any code path; `submission_state` is never updated. The frontend polls for `completed` and will never see it — successful runs terminate as `READY_FOR_SUBMISSION`.
+- `finish_review` is a valid `BrowserAction` literal but has no executor handler ("Unknown action type") and is absent from the LLM schema.
+- `browser_mode`/`headless`: `browser_mode="user"` forces headed regardless of `headless` — intentional per docstring, but `.env.example` documents neither variable.
+- `=42.0.0` — a tracked junk file at repo root (artifact of an unquoted `pip install ... >=42.0.0`).
 
-`BrowserAction` uses Pydantic field validators to enforce, at construction time, things like "upload requires `document_ref`", "select requires `option`", and — notably — a regex rejecting Aadhaar/PAN-shaped strings from ever being placed in `literal_value` (forcing that data through `value_ref` instead). This is a good belt-and-suspenders check: even if an LLM or a bug tried to put a raw PAN number in a "public" field, construction fails before it reaches the executor. No issues found here.
+### C11 (Low): Tests lag the new semantics
+- Update `test_click_button` to assert the gate (expect `success=False`, message contains `REQUIRE_CONFIRMATION`, or assert via a pre-approved executor flag once C1 lands).
+- Update `test_press_tab` for C7 semantics.
+- Add runner-level tests: sensitive fill halts with `pending_action` stored; `resume(approved=True)` actually executes (post-C1-fix); `resume(False)` → ABORTED; stale `pending_observation_id` rejected.
+- Add an aria.py unit test asserting kwarg *values* (`mode == "ai"`), which would have caught C3.
+
+### C12 (Informational / hardening notes)
+- `ignore_https_errors=True` on the browser context — acceptable for gov-site TLS oddities, but worth a setting with default False and per-domain opt-in.
+- `/api/*` endpoints have no authentication whatsoever; anyone who can reach port 8000 can launch browser automations. Fine for localhost dev; must be addressed before any remote exposure. `start_automation(body: dict)` also skips Pydantic validation.
+- Frontend renders registry-derived strings via `innerHTML` with minimal escaping (`escapedTask` escapes single quotes only). Source data is code-controlled today, so exploitability is nil, but the pattern breaks the moment registry data becomes user-editable.
+- `_handle_no_action` maps "planner produced nothing" to `READY_FOR_SUBMISSION` when there are no unmapped fields — an LLM outage or a `stop` on a half-filled multi-page form reports "ready for submission". Should be a distinct status (e.g. WAITING_FOR_USER with reason).
+- `WorkflowState.record_action` adds `target_ref` to `completed_bindings` for any successful action including clicks/scrolls — field-completion bookkeeping can be polluted.
+- Prompt truncation `elements_info[:20]` in the LLM planner silently hides fields beyond the 20th — common on real government forms.
+- `verify_upload`'s final JS fallback picks the Nth `input[type=file]` by parsing the global element index out of the ref — can attribute another input's file to this upload (violates the file's own docstring / audit issue #16). Frame-hosted uploads are unverifiable (JS runs in main frame only).
+- `sensitivity.py::FIELD_SENSITIVITY` duplicates sensitivity data already in `ReferenceRegistry` (currently consistent, but two sources of truth is exactly what the remediation spec's Issue #37 said to eliminate).
+- `routes.py::list_states` reaches into `reg._domains` (private attr).
+- `executor.py` reads `document_resolver._doc_fields` (private attr across classes).
+- `main.py` serves `index.html` with no caching headers issue — fine; but reading from disk per request is intentional ("fresh"), documented inline.
 
 ---
 
-## 3. Cross-cutting: what changed at the product layer, and one config choice worth a second look
+## 3. What's working well
 
-**API/frontend (`app/api/routes.py`, `app/frontend/index.html`, both new).** The new frontend is a legitimately well-built directory/search UI over the site registry (categories, per-state filtering, full-text search, site detail modals) — a real, working piece of software. But the button that matters, "Start Automation," is:
-```javascript
-function startAutomation(domain) {
-    closeModal();
-    alert(`Automation for ${domain} - coming soon!`);
-}
-```
-`AgentRunner`, `BrowserExecutor`, and `BrowserManager` are not imported anywhere in `app/main.py` or `app/api/routes.py`. The engine audited above is real and mostly sound; it still isn't reachable from the UI. Worth naming plainly since a lot of the latest work (1,323 lines of registry data, 1,008-line frontend) went into the discovery layer around the hard problem rather than into closing the last mile to it.
+Worth stating plainly, because the skeleton is genuinely good:
 
-**Default LLM (`app/config/settings.py`).** Both `openrouter_model` and `openrouter_vision_model` now default to `stealth/ox-alpha`:
-```python
-openrouter_model: str = Field(default="stealth/ox-alpha", ...)
-openrouter_vision_model: str = Field(default="stealth/ox-alpha", ...)
-```
-Checking what this actually is: it's a free, anonymous "stealth" model that appeared on OpenRouter around August 20, 2026, with its developer undisclosed and, per multiple outlets covering the release, an unresolved public question about whether/how prompts are retained by the anonymous operator — one report specifically frames this as a live, contested issue rather than a settled one. Separately, "stealth" listings on OpenRouter are explicitly temporary preview arrangements (this one's free window is reported as roughly one week from its Aug 20 launch), so this default is also likely to stop resolving or silently swap providers within days regardless of the privacy question. For a tool whose central design goal is careful handling of government-ID data, defaulting to an anonymous provider with an open data-retention question is worth an explicit, documented decision rather than an unstated one — even though, per the sanitizer/reference-indirection design above, raw Aadhaar/PAN values shouldn't reach the LLM either way. This is a config default worth deliberately pinning to a named, accountable provider before this goes anywhere near real user data, not a code bug.
+- **Policy engine**: clean risk taxonomy, auth-context short-circuit, deny-by-default posture for unknown risky patterns; correctly wired at both runner and executor layers.
+- **Reference indirection for PII**: raw Aadhaar/PAN never enter prompts; `value_ref` resolution happens locally in the executor; `BrowserAction` validators reject PAN/Aadhaar-shaped literals at construction time.
+- **Field mapping**: tiered deterministic→LLM→user design with registry validation of every binding (including LLM output) is the right architecture and is implemented faithfully.
+- **Verification layer**: per-action verifier modules, sensible cascades (click's URL/title/count/alerts/validation/state/content diff), UNCERTAIN treated as stop-not-proceed.
+- **Observation staleness contract**: `observation_id` on actions/bindings + executor rejection of stale refs works as designed.
+- **LLM gateway**: bounded retries with jitter, structured output, redacted logging, typed error hierarchy, fail-closed.
+- **Trusted-domain gate at `open()`** is a real access-control boundary now, and the API only starts workflows for registered domains.
+
+## 4. Architecture as-built (one paragraph)
+
+`FastAPI (main.py/routes.py)` owns discovery + workflow launch; `AgentRunner (runner.py)` owns the loop: `PageObserver.observe()` (dom.py JS extraction + aria.py + frames) → `FieldMapper.map_fields()` (deterministic rules → optional LLM disambiguation, registry-validated) → `plan_with_llm/plan_deterministic` → `PolicyEngine.evaluate()` → `BrowserExecutor.execute()` (locator.py frame-aware resolution → Playwright → re-observe → `ActionVerifier` dispatch) → `WorkflowState` accumulation. `VaultResolver`/`DocumentResolver` resolve refs locally; `VaultManager` persists (optionally encrypted); `OpenRouterGateway` is the only outbound LLM transport. The two broken joints are exactly at the human boundaries: confirm/resume (C1) and vault loading (C2).
+
+## 5. Findings summary
+
+| ID | Severity | Area | Finding |
+|----|----------|------|---------|
+| C1 | **High** | Agent/workflow + API | Confirmation halt works but `resume()` is double-gated (approved actions can't execute), no API/UI resumes, and resume doesn't re-enter the loop |
+| C2 | **High** | Vault/API wiring | Runtime uses an empty `UserVault` — all `value_ref` fills fail via API; `VAULT_ENCRYPTION_KEY` in `.env` never reaches `VaultManager` |
+| C3 | Medium–High | Perception | ARIA snapshot passes `mode=True` (bool) — driver rejects, snapshots empty again; 1 test failing |
+| C4 | Medium | Planning | Deterministic select re-picks the already-selected option; checkbox always checks; select ignores bindings/vault |
+| C5 | Medium | API | `abort` doesn't cancel the running task and its status gets overwritten; unreferenced `create_task`; unbounded screenshot memory |
+| C6 | Medium | Data/prompts | Registry task instructions coach the agent to solve CAPTCHAs/enter OTPs, contradicting the policy engine |
+| C7 | Low–Med | Verification | Benign presses (Tab) → UNCERTAIN → recovery burn → possible workflow FAILURE; 1 test failing |
+| C8 | Low | Document policy | Path-containment check is a tautology; intended allowed-root confinement not implemented |
+| C9 | Low | Vault crypto | Unsalted single-pass SHA-256 KDF for Fernet key |
+| C10 | Low | Config/dead code | Vision fallback unintegrated; vision/fallback models unused; `COMPLETED`/`WAITING_FOR_CAPTCHA`/`submission_state` never set; `llm_visible`/`confirmation_policy` dead; junk `=42.0.0` file |
+| C11 | Low | Tests | Suite not updated for gate/press semantics; zero coverage of resume/pending-action path; no kwarg-value test for aria |
+| C12 | Info | Hardening | No API auth; `ignore_https_errors`; innerHTML rendering; READY_FOR_SUBMISSION mislabel on LLM failure; upload index-fallback mis-targeting; duplicated sensitivity tables; private-attr reach-throughs |
+
+Prior findings: **B2, B3, B4, B5, B6(impl), B7 fixed**; **B1 regressed (C3)**; **B6 wiring missing (C2)**.
+
+## 6. Suggested order of attack
+
+1. **C1** — make the confirmation loop real: confirmed-execution bypass in `executor.execute()`, an approve/decline endpoint calling `runner.resume()`, and loop re-entry preserving `WorkflowState`. Without it, the product stalls on every realistic form.
+2. **C2** — wire `VaultManager` into the API/runner path and route the encryption key through `Settings`. This is what turns "engine works" into "agent can fill forms".
+3. **C3** — one-line aria fix + kwarg-value test (clears a test failure immediately).
+4. **C5 + C11** — abort cancellation/task refs/memory caps, and bring the three failing tests in line with intended semantics while adding resume-path coverage.
+5. **C4, C6, C7** — planner select correctness, instruction/policy alignment, press semantics.
+6. **C8–C10, C12** — quality/hardening backlog, in whatever order convenience dictates; none block a demo, several block production.
 
 ---
 
-## 4. Findings summary
+## Remediation log (Aug 25, 2026 — post-audit implementation)
 
-| ID | Area | Finding | Status | Severity |
-|----|------|---------|--------|----------|
-| B1 | Browser automation | `aria_snapshot(mode="ai")` throws on installed Playwright; snapshot always empty | Confirmed, reproduced live | Low (contained blast radius) |
-| B2 | Browser automation | `REQUIRE_CONFIRMATION` actions execute without pausing, in both runner.py and executor.py | Confirmed on latest commit, post-refactor | **High** — safety-critical |
-| B3 | Browser automation | `verify_fill()` skips live-value check for `value_ref` (vault/sensitive) fills | New finding | **High** — data-integrity |
-| B4 | Browser automation | `press` and `go_back` skip verification by default | New finding | Medium |
-| B5 | Browser automation | `TrustedDomainRegistry` (1,300+ lines) not enforced anywhere in the execution path | Confirmed, exact chokepoint identified | Medium–High |
-| B6 | Form filling | Vault (Aadhaar/PAN/bank data) stored as plaintext JSON at rest | New finding | Medium–High |
-| B7 | Form filling | `DocumentPolicy` MIME validation is configured but never enforced; extension-only check is spoofable | New finding | Medium |
-| — | Product | "Start Automation" is a stub `alert()`; engine not reachable from any UI/API | Confirmed | Blocks real usage |
-| — | Config | Default LLM is an anonymous, temporary "stealth" model with a contested retention policy | Confirmed via current reporting | Worth a deliberate decision |
+All fixes verified by: full test suite **374 passed / 0 failed** (was 3 failed / 325 passed),
+plus a live semi-E2E smoke run (real Chromium, synthetic form): public fills auto-execute →
+sensitive fill halts with `pending_action` → `resume(approved=True)` re-validates target and
+executes → select completes → submit click gates again → `resume(approved=False)` aborts cleanly.
 
-## 5. Suggested order of attack
+| Finding | Fix | Files |
+|---|---|---|
+| C1 confirmation dead end | `user_confirmed` bypass in executor; `resume()` re-observes, verifies target identity via stored signature, re-targets to fresh observation, honors fresh DENY/PAUSE, then **re-enters the shared loop**; `POST /api/automate/{id}/confirm` endpoint + frontend Approve/Decline UI; automation loop waits at checkpoints | `executor.py`, `runner.py`, `routes.py`, `workflow_state.py`, `index.html` |
+| C2 vault disconnected | `AgentRunner(vault=…, document_registry=…)` wired from a `VaultManager` loaded in the API flow; empty-vault warning surfaced per workflow | `runner.py`, `executor.py`, `routes.py` |
+| C3 aria `mode=True` | kwargs now carry proper values (`mode="ai"`, `refs=True`) filtered by driver signature; kwarg-value regression tests | `aria.py`, `tests/unit/test_aria.py` |
+| C4 planner select/checkbox | deterministic planner resolves bindings through the vault; skips already-satisfied fields; skips unresolvable bindings; robust option matching (label → value attr → case/whitespace-insensitive) | `planner.py`, `executor.py`, `runner.py` |
+| C5 abort no-op / memory | real task cancellation with strong task refs; screenshot history capped; bounded workflow store with eviction | `routes.py` |
+| C6 CAPTCHA/OTP coaching | sentence-level instruction sanitizer drops manual-step steps and appends an explicit user-handles note | `sites/registry.py`, `routes.py` |
+| C7 press semantics | control keys (Tab/arrows/Escape/…) without change → SUCCESS; Enter stays strict | `verifiers/press.py` |
+| C8 vacuous path check | opt-in `allowed_roots` confinement enforced against configured roots | `document_policy.py`, `settings.py`, `executor.py` |
+| C9 weak KDF | salted scrypt KDF with versioned on-disk format (`VLT1`+salt+token); legacy unsalted files still readable and upgraded on save; key routed through Settings | `vault/manager.py`, `settings.py` |
+| C10 dead config/statuses | vision model used for image requests; fallback model implemented as second-chance switch; `COMPLETED` + `WAITING_FOR_CAPTCHA` set; `submission_state` transitions; `finish_review` removed; junk `=42.0.0` deleted | `openrouter.py`, `runner.py`, `actions.py` |
+| C11 tests lagging | stale tests updated to gate semantics; new coverage: resume flow (approve/decline/no-pending/DENY-wins/vanished-target), planner determinism, aria kwargs, instruction sanitizer, vault crypto formats, doc-policy roots, API confirm/abort endpoints | `tests/unit/*`, `tests/integration/*` |
+| C12 hardening | typed request bodies; optional bearer-token auth on `/api/*`; LLM-failure no longer mislabeled READY_FOR_SUBMISSION; upload index-guess fallback removed; public accessors replace private reach-throughs; sensitivity derived from ReferenceRegistry (single source of truth); frontend `escapeHtml`; `.env.example` documents all new vars | multiple |
 
-1. **B2** (confirmation gate) — this is the one place where "the code doesn't match the safety doc" translates directly into an unattended sensitive/financial action.
-2. **B3** (fill verification) — cheap, mechanical fix (thread the resolved value through), closes a real correctness gap on the sensitive-data path specifically.
-3. **B5** (trusted-domain enforcement) — the data already exists; this is wiring one check into `BrowserManager.open()` or the policy engine, not new research.
-4. **B6** (vault at rest) — a deliberate encryption-at-rest decision before this handles real Aadhaar/PAN data.
-5. B1, B4, B7, and the LLM default are all real but lower-urgency — good next-PR-sized items.
-6. The API/frontend gap isn't a bug so much as a scoping decision: the engine is close to demo-able once #1–3 are addressed; wiring `AgentRunner` behind a couple of endpoints (start / poll status / confirm-pending-action) is the remaining path to an actual working demo.
-
----
-
-*I have working, tested fixes ready for B1, B2 (including the resume-after-confirmation flow), and B3 from earlier in this session — not yet applied to this checkout. Say the word and I'll apply and verify them against this exact commit.*
+**Bonus fix found during live verification:** qualified labels ("Applicant Full Name") scored
+MEDIUM due to keyword-length dilution — token-coverage scoring now keeps them HIGH
+(`field_mapper.py`), unblocking the most common real-world label pattern.

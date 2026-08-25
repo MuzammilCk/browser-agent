@@ -222,6 +222,14 @@ class DocumentResolver:
         """Check if a document reference is valid."""
         return self._ref_registry.validate(document_ref)
 
+    def get_doc_type(self, document_ref: str) -> str:
+        """Get the document type (vault attribute name) for a document ref.
+
+        Public accessor — callers (executor/document policy) should not
+        reach into _doc_fields directly.
+        """
+        return self._doc_fields.get(document_ref, "unknown")
+
     def can_resolve(self, document_ref: str) -> bool:
         """Check if a document reference can be resolved (valid + exists)."""
         return self.resolve(document_ref) is not None

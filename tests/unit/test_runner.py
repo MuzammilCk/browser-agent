@@ -19,6 +19,17 @@ from app.models.page_state import (
 )
 from app.models.workflow_state import WorkflowState, WorkflowStatus
 from app.policy.engine import PolicyDecision, PolicyEngine
+from app.vault.resolver import UserVault
+
+
+def _make_runner(**kwargs) -> AgentRunner:
+    """Runner with a populated vault — deterministic planning only emits
+    fills it can actually resolve (audit C4)."""
+    return AgentRunner(llm=None, vault=UserVault(full_name="Test User"), **kwargs)
+
+
+def _runner_with_llm(mock_llm) -> AgentRunner:
+    return AgentRunner(llm=mock_llm, vault=UserVault(full_name="Test User"))
 
 
 def _make_element(
@@ -166,7 +177,7 @@ class TestAuthenticationCheckpoints:
 
     @pytest.mark.asyncio
     async def test_captcha_pauses_workflow(self):
-        runner = AgentRunner(llm=None)
+        runner = _make_runner()
         mock_page = MagicMock()
 
         elements = [_make_element("e1", accessible_name="Enter CAPTCHA")]
@@ -177,12 +188,16 @@ class TestAuthenticationCheckpoints:
         with patch.object(runner._observer, "observe", return_value=observation):
             workflow = await runner.run(mock_page, task="Test")
 
-        assert workflow.status == WorkflowStatus.WAITING_FOR_AUTH
+        # Audit C10: CAPTCHA gets its own, more precise status
+        assert workflow.status in (
+            WorkflowStatus.WAITING_FOR_CAPTCHA,
+            WorkflowStatus.WAITING_FOR_AUTH,
+        )
         assert "captcha" in workflow.checkpoints
 
     @pytest.mark.asyncio
     async def test_otp_pauses_workflow(self):
-        runner = AgentRunner(llm=None)
+        runner = _make_runner()
         mock_page = MagicMock()
 
         observation = _make_observation(
@@ -198,7 +213,7 @@ class TestAuthenticationCheckpoints:
 
     @pytest.mark.asyncio
     async def test_password_pauses_workflow(self):
-        runner = AgentRunner(llm=None)
+        runner = _make_runner()
         mock_page = MagicMock()
 
         observation = _make_observation(
@@ -222,7 +237,7 @@ class TestDeterministicPlanning:
 
     @pytest.mark.asyncio
     async def test_fills_fields_in_order(self):
-        runner = AgentRunner(llm=None)
+        runner = _make_runner()
         mock_page = MagicMock()
 
         elements = [
@@ -262,7 +277,7 @@ class TestDeterministicPlanning:
 
     @pytest.mark.asyncio
     async def test_clicks_submit_after_filling(self):
-        runner = AgentRunner(llm=None)
+        runner = _make_runner()
         mock_page = MagicMock()
 
         elements = [
@@ -310,7 +325,7 @@ class TestDeterministicPlanning:
 
     @pytest.mark.asyncio
     async def test_stops_when_no_action_needed(self):
-        runner = AgentRunner(llm=None)
+        runner = _make_runner()
         mock_page = MagicMock()
 
         observation = _make_observation([])
@@ -347,7 +362,7 @@ class TestLLMPlanning:
         }
         mock_llm.complete = AsyncMock(return_value=mock_response)
 
-        runner = AgentRunner(llm=mock_llm)
+        runner = _runner_with_llm(mock_llm)
         mock_page = MagicMock()
 
         elements = [_make_element("e1", accessible_name="Full Name")]
@@ -387,7 +402,7 @@ class TestLLMPlanning:
         mock_response.parsed = {"action": "stop"}
         mock_llm.complete = AsyncMock(return_value=mock_response)
 
-        runner = AgentRunner(llm=mock_llm)
+        runner = _runner_with_llm(mock_llm)
         mock_page = MagicMock()
 
         elements = [_make_element("e1", accessible_name="Full Name")]
@@ -406,7 +421,7 @@ class TestLLMPlanning:
         mock_llm = MagicMock()
         mock_llm.complete = AsyncMock(side_effect=Exception("API error"))
 
-        runner = AgentRunner(llm=mock_llm)
+        runner = _runner_with_llm(mock_llm)
         mock_page = MagicMock()
 
         observation = _make_observation([])
@@ -433,7 +448,7 @@ class TestRecoveryLogic:
 
     @pytest.mark.asyncio
     async def test_recovery_on_failure(self):
-        runner = AgentRunner(llm=None, max_iterations=5)
+        runner = _make_runner(max_iterations=5)
         mock_page = MagicMock()
 
         elements = [_make_element("e1", accessible_name="Full Name")]
@@ -475,7 +490,7 @@ class TestRecoveryLogic:
 
     @pytest.mark.asyncio
     async def test_stops_after_max_recovery(self):
-        runner = AgentRunner(llm=None, max_iterations=3)
+        runner = _make_runner(max_iterations=3)
         mock_page = MagicMock()
 
         elements = [_make_element("e1", accessible_name="Full Name")]
@@ -520,7 +535,7 @@ class TestMaxIterations:
 
     @pytest.mark.asyncio
     async def test_stops_at_max_iterations(self):
-        runner = AgentRunner(llm=None, max_iterations=2)
+        runner = _make_runner(max_iterations=2)
         mock_page = MagicMock()
 
         elements = [_make_element("e1", accessible_name="Full Name")]

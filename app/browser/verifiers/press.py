@@ -21,6 +21,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Keys that can legitimately produce no visible change. A strict
+# UNCERTAIN verdict for these burns the recovery budget on harmless
+# presses (audit C7). Enter and submit-style keys keep strict handling.
+_BENIGN_KEYS = {
+    "tab", "shift+tab", "escape", "arrowup", "arrowdown",
+    "arrowleft", "arrowright", "pageup", "pagedown", "home", "end",
+}
+
 
 async def verify_press(
     page: Page, action: BrowserAction, prev: PageState, curr: PageState,
@@ -28,10 +36,12 @@ async def verify_press(
     """Verify a press action had the intended effect.
 
     Check: URL changed, page type changed, or element count changed.
-    If nothing changed, report UNCERTAIN (not SUCCESS).
+    If nothing changed: UNCERTAIN for potentially-mutating keys (Enter),
+    SUCCESS for control keys that legitimately have no visible effect.
     """
     ref = action.target_ref
     key = action.key or ""
+    is_benign = key.strip().lower() in _BENIGN_KEYS
 
     # If pressed on a specific target, check it still exists
     if ref:
@@ -73,7 +83,12 @@ async def verify_press(
     if page_type_changed or element_count_changed:
         return make_success("press", ref, f"Page state changed after pressing '{key}'")
 
-    # No observable change — UNCERTAIN, not SUCCESS
+    # No observable change: control keys are fine; mutating keys are UNCERTAIN
+    if is_benign:
+        return make_success(
+            "press", ref,
+            message=f"Pressed '{key}' — no page change expected for control keys",
+        )
     return make_uncertain(
         "press", ref,
         message=f"No observable change after pressing '{key}'",

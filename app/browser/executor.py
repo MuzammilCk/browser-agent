@@ -53,13 +53,14 @@ class BrowserExecutor:
         vault: UserVault | None = None,
         document_registry: DocumentRegistry | None = None,
         policy_engine: PolicyEngine | None = None,
+        document_policy: DocumentPolicy | None = None,
     ) -> None:
         self.locator_resolver = LocatorResolver()
         self.verifier = ActionVerifier()
         self.value_resolver = ValueResolver(vault or UserVault())
         self.document_resolver = DocumentResolver(document_registry or DocumentRegistry())
         self.policy_engine = policy_engine or PolicyEngine()
-        self.document_policy = DocumentPolicy()
+        self.document_policy = document_policy or DocumentPolicy()
 
     def set_vault(self, vault: UserVault) -> None:
         self.value_resolver = ValueResolver(vault)
@@ -72,6 +73,8 @@ class BrowserExecutor:
         page: Page,
         action: BrowserAction,
         observation: PageObservation,
+        *,
+        user_confirmed: bool = False,
     ) -> ActionResult:
         """Execute a browser action with full policy + verification loop.
 
@@ -84,6 +87,12 @@ class BrowserExecutor:
         6. Verify action result
         7. Handle UNCERTAIN
         8. Return ActionResult with post_observation
+
+        Args:
+            user_confirmed: True only when the user explicitly approved this
+                exact action through the confirmation flow (runner.resume).
+                Satisfies REQUIRE_CONFIRMATION; DENY and PAUSE_FOR_USER are
+                still enforced unconditionally.
         """
         logger.info("Executing action: %s (target=%s)", action.action, action.target_ref)
 
@@ -121,8 +130,9 @@ class BrowserExecutor:
                 policy_result=policy_result,
             )
 
-        if policy_result.needs_confirmation:
-            # Audit B2 fix: halt execution instead of falling through
+        if policy_result.needs_confirmation and not user_confirmed:
+            # Audit B2 fix: halt execution instead of falling through.
+            # Only an explicit user approval (runner.resume) may proceed.
             return ActionResult(
                 action=action,
                 success=False,
@@ -130,14 +140,16 @@ class BrowserExecutor:
                 recovery_required=True,
                 policy_result=policy_result,
             )
+        if policy_result.needs_confirmation and user_confirmed:
+            logger.info(
+                "Policy REQUIRE_CONFIRMATION satisfied by explicit user approval"
+            )
 
         # ─── DOCUMENT POLICY (per audit #19) ──────────────────────
         if action.action == "upload" and action.document_ref:
             doc = self.document_resolver.resolve(action.document_ref)
             if doc:
-                doc_type = self.document_resolver._doc_fields.get(
-                    action.document_ref, "unknown"
-                )
+                doc_type = self.document_resolver.get_doc_type(action.document_ref)
                 doc_result = self.document_policy.validate_upload(doc.path, doc_type)
                 if doc_result.blocked:
                     return ActionResult(
@@ -323,11 +335,56 @@ class BrowserExecutor:
                 action=action, success=False,
                 message=f"Could not locate element {action.target_ref}",
             )
-        await locator.select_option(label=action.option)
+        selected = await self._select_option_robust(locator, action.option)
+        if not selected:
+            return ActionResult(
+                action=action, success=False,
+                message=f"Option '{action.option}' not found in {action.target_ref}",
+            )
         return ActionResult(
             action=action, success=True,
-            message=f"Selected '{action.option}' in {action.target_ref}",
+            message=f"Selected '{selected}' in {action.target_ref}",
         )
+
+    async def _select_option_robust(self, locator, option: str) -> str | None:
+        """Select an <option> by label with graceful fallbacks.
+
+        Government forms rarely match vault values exactly ("Male" vs
+        "MALE", extra whitespace). Order:
+          1. exact label
+          2. option value attribute
+          3. case/whitespace-insensitive label match via DOM scan
+        Returns the matched option text, or None if nothing matched.
+        """
+        try:
+            await locator.select_option(label=option)
+            return option
+        except Exception:
+            pass
+
+        try:
+            await locator.select_option(option)
+            return option
+        except Exception:
+            pass
+
+        try:
+            idx = await locator.evaluate(
+                """(selectEl, wanted) => {
+                    const norm = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                    const options = Array.from(selectEl.options);
+                    let i = options.findIndex(o => norm(o.textContent) === norm(wanted));
+                    if (i < 0) i = options.findIndex(o => norm(o.value) === norm(wanted));
+                    return i;
+                }""",
+                option,
+            )
+            if idx is not None and idx >= 0:
+                await locator.select_option(index=idx)
+                return option
+        except Exception as e:
+            logger.debug("Fuzzy select failed for '%s': %s", option, e)
+        return None
 
     async def _execute_check(
         self, page: Page, action: BrowserAction, page_state: PageState, check: bool

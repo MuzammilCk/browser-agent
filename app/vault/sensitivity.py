@@ -1,5 +1,10 @@
 """Sensitive field classification.
 
+Audit C12: FIELD_SENSITIVITY used to be a second, hardcoded copy of the
+sensitivity data already in ``ReferenceRegistry`` — exactly the
+dual-source-of-truth drift the remediation spec (issue #37) warned about.
+All classification now derives lazily from the registry.
+
 Per SAFETY.md and context.md:
 - R2 (sensitive) fields require stronger validation
 - Government IDs, financial data, health info are sensitive
@@ -9,6 +14,7 @@ Per SAFETY.md and context.md:
 from __future__ import annotations
 
 from enum import Enum
+from functools import lru_cache
 
 
 class SensitivityLevel(str, Enum):
@@ -20,67 +26,35 @@ class SensitivityLevel(str, Enum):
     SECRET = "secret"        # Never expose (e.g., passwords, OTP)
 
 
-# Sensitivity classification for all USER fields
-FIELD_SENSITIVITY: dict[str, SensitivityLevel] = {
-    # Identity — mostly public but some sensitive
-    "full_name": SensitivityLevel.PUBLIC,
-    "first_name": SensitivityLevel.PUBLIC,
-    "last_name": SensitivityLevel.PUBLIC,
-    "date_of_birth": SensitivityLevel.SENSITIVE,  # Identity verification
-    "gender": SensitivityLevel.PUBLIC,
-    "nationality": SensitivityLevel.PUBLIC,
-    "age": SensitivityLevel.PUBLIC,
+@lru_cache(maxsize=1)
+def _field_sensitivity() -> dict[str, SensitivityLevel]:
+    """Build {vault_attribute: SensitivityLevel} from ReferenceRegistry."""
+    from app.agent.registry import get_registry
 
-    # Contact
-    "mobile": SensitivityLevel.SENSITIVE,  # PII
-    "email": SensitivityLevel.INTERNAL,
-
-    # Address
-    "address": SensitivityLevel.INTERNAL,
-    "permanent_address": SensitivityLevel.INTERNAL,
-    "state": SensitivityLevel.PUBLIC,
-    "district": SensitivityLevel.PUBLIC,
-    "block": SensitivityLevel.PUBLIC,
-    "pincode": SensitivityLevel.PUBLIC,
-    "village": SensitivityLevel.PUBLIC,
-
-    # Government IDs — always sensitive
-    "aadhaar_number": SensitivityLevel.SENSITIVE,  # Government ID
-    "aadhaar_name": SensitivityLevel.PUBLIC,  # Name as per Aadhaar (not the number)
-    "pan_number": SensitivityLevel.SENSITIVE,  # Financial ID
-    "voter_id": SensitivityLevel.SENSITIVE,  # Government ID
-
-    # Education — mostly public
-    "education": SensitivityLevel.PUBLIC,
-    "degree": SensitivityLevel.PUBLIC,
-    "institution": SensitivityLevel.PUBLIC,
-
-    # Employment
-    "occupation": SensitivityLevel.PUBLIC,
-    "employer": SensitivityLevel.INTERNAL,
-    "annual_income": SensitivityLevel.SENSITIVE,  # Financial
-
-    # Financial — sensitive
-    "bank_name": SensitivityLevel.INTERNAL,
-    "account_number": SensitivityLevel.SENSITIVE,  # Financial
-    "ifsc_code": SensitivityLevel.INTERNAL,
-
-    # Family
-    "father_name": SensitivityLevel.PUBLIC,
-    "mother_name": SensitivityLevel.PUBLIC,
-    "spouse_name": SensitivityLevel.PUBLIC,
-    "guardian_name": SensitivityLevel.PUBLIC,
-
-    # Category
-    "category": SensitivityLevel.PUBLIC,
-    "religion": SensitivityLevel.PUBLIC,
-    "marital_status": SensitivityLevel.PUBLIC,
-}
+    reg = get_registry()
+    mapping: dict[str, SensitivityLevel] = {}
+    strictness = [
+        SensitivityLevel.PUBLIC,
+        SensitivityLevel.INTERNAL,
+        SensitivityLevel.SENSITIVE,
+        SensitivityLevel.SECRET,
+    ]
+    for key in reg.list_keys():
+        attr = reg.get_vault_attribute(key)
+        if not attr:
+            continue
+        level = SensitivityLevel(reg.get_sensitivity(key).value)
+        # A vault attribute may back several reference keys (e.g.
+        # USER.account_number and USER.bank_account); the strictest wins.
+        existing = mapping.get(attr)
+        if existing is None or strictness.index(level) > strictness.index(existing):
+            mapping[attr] = level
+    return mapping
 
 
 def get_field_sensitivity(field_name: str) -> SensitivityLevel:
-    """Get the sensitivity level for a field."""
-    return FIELD_SENSITIVITY.get(field_name, SensitivityLevel.INTERNAL)
+    """Get the sensitivity level of a vault attribute (default INTERNAL)."""
+    return _field_sensitivity().get(field_name, SensitivityLevel.INTERNAL)
 
 
 def is_sensitive(field_name: str) -> bool:
@@ -91,9 +65,21 @@ def is_sensitive(field_name: str) -> bool:
 
 def get_safe_fields() -> list[str]:
     """Get fields safe to send to LLM (public only)."""
-    return [k for k, v in FIELD_SENSITIVITY.items() if v == SensitivityLevel.PUBLIC]
+    return [
+        k for k, v in _field_sensitivity().items()
+        if v == SensitivityLevel.PUBLIC
+    ]
 
 
 def get_sensitive_fields() -> list[str]:
     """Get all sensitive/secret fields."""
-    return [k for k, v in FIELD_SENSITIVITY.items() if v in (SensitivityLevel.SENSITIVE, SensitivityLevel.SECRET)]
+    return [
+        k for k, v in _field_sensitivity().items()
+        if v in (SensitivityLevel.SENSITIVE, SensitivityLevel.SECRET)
+    ]
+
+
+# Backwards-compatible mapping view, derived from ReferenceRegistry.
+# Kept as a name because existing callers/tests import it; the data is
+# no longer maintained here — update ReferenceRegistry instead.
+FIELD_SENSITIVITY: dict[str, SensitivityLevel] = _field_sensitivity()

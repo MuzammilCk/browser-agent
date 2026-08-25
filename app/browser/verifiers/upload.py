@@ -74,11 +74,10 @@ _VERIFY_JS = """
             }
         }
     }
-    if (!target) {
-        const inputs = document.querySelectorAll('input[type="file"]');
-        const idx = parseInt(elementInfo.ref.replace('e', '')) - 1;
-        if (idx >= 0 && idx < inputs.length) target = inputs[idx];
-    }
+    // Audit #16 / C12: no index-based guessing. Matching "some file input"
+    // by ordinal can attribute a different input's file to this upload.
+    // If the exact target cannot be identified, report not-found and the
+    // verifier returns UNCERTAIN instead of a false pass.
     if (target && target.files && target.files.length > 0) {
         return { found: true, file_count: target.files.length, file_name: target.files[0].name || null };
     }

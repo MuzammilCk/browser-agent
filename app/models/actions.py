@@ -37,7 +37,6 @@ class BrowserAction(BaseModel):
         "wait",
         "go_back",
         "request_user_action",
-        "finish_review",
         "stop",
     ]
     target_ref: str | None = Field(

@@ -24,6 +24,7 @@ from app.llm.base import LLMGateway
 from app.llm.retry import RetryPolicy
 from app.llm.schemas import (
     LLMBadRequestError,
+    LLMError,
     LLMMalformedResponseError,
     LLMRateLimitError,
     LLMResponse,
@@ -95,6 +96,9 @@ class OpenRouterGateway(LLMGateway):
         Retries on timeout, 429, and 5xx errors.
         """
         model = self._settings.openrouter_model
+        # Vision requests go to the configured vision model when set (audit C10)
+        if images and self._settings.openrouter_vision_model:
+            model = self._settings.openrouter_vision_model
 
         # Build messages
         messages = [{"role": "system", "content": system}]
@@ -132,9 +136,21 @@ class OpenRouterGateway(LLMGateway):
                 },
             }
 
-        # Execute with retries
+        # Execute with retries; on total failure, try the fallback model
+        # once when configured (audit C10 — openrouter_fallback_model).
         start_time = time.monotonic()
-        response = await self._retry.execute(self._do_request, payload)
+        try:
+            response = await self._retry.execute(self._do_request, payload)
+        except LLMError:
+            fallback = self._settings.openrouter_fallback_model
+            if not fallback or fallback == model:
+                raise
+            logger.warning(
+                "Primary model '%s' failed after retries — trying fallback '%s'",
+                model, fallback,
+            )
+            payload["model"] = fallback
+            response = await self._retry.execute(self._do_request, payload)
         latency_ms = (time.monotonic() - start_time) * 1000
 
         # Parse response

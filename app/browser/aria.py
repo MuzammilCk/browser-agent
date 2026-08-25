@@ -35,10 +35,23 @@ def _probe_snapshot_kwargs() -> None:
 _probe_snapshot_kwargs()
 
 
+# Values to use when a kwarg is supported. Playwright's aria_snapshot
+# validates mode against {"ai", "default"} server-side; passing any other
+# value (e.g. a bare bool) is rejected by the driver even though Python's
+# signature accepts it.
+_KWARG_VALUES: dict[str, object] = {
+    "mode": "ai",
+    "refs": True,
+}
+
+
 def _build_snapshot_kwargs(**hints: bool) -> dict:
-    """Build kwargs dict, only including params the driver actually accepts."""
-    candidates = {"mode": hints.get("mode", False), "refs": hints.get("refs", False)}
-    return {k: v for k, v in candidates.items() if k in _supported_snapshot_kwargs and v}
+    """Build kwargs dict with proper values for params the driver accepts."""
+    return {
+        k: _KWARG_VALUES[k]
+        for k in ("mode", "refs")
+        if hints.get(k, False) and k in _supported_snapshot_kwargs and k in _KWARG_VALUES
+    }
 
 
 async def extract_aria_snapshot(page: Page) -> str:

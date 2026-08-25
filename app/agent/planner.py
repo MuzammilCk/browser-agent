@@ -50,6 +50,12 @@ ACTION_SCHEMA = {
 
 _sanitizer = PromptSanitizer()
 
+# Upper bound on elements sent to the LLM. Portals commonly expose 100+
+# interactive elements on their landing pages; truncating to the first few
+# hides the link/button the task targets and makes the planner stop with
+# "no action" despite the element being present on the page.
+_MAX_ELEMENTS_FOR_LLM = 120
+
 
 def _build_elements_info(observation: PageObservation) -> list[dict]:
     """Extract element info for LLM context (sanitized)."""
@@ -136,26 +142,35 @@ async def plan_with_llm(
     bindings_info = _build_bindings_info(mapping_result)
     pending = _build_pending_fields(mapping_result, completed)
 
-    system_prompt = f"""You are a government form-filling browser agent.
+    truncated = len(elements_info) > _MAX_ELEMENTS_FOR_LLM
+    visible_elements = elements_info[:_MAX_ELEMENTS_FOR_LLM]
+
+    system_prompt = f"""You are a government portal browser agent.
 
 TASK: {workflow.task_description or 'Fill the form on the current page'}
 
 RULES:
 1. Take ONE action at a time.
-2. Fill fields in order from top to bottom.
-3. Use value_ref (e.g., USER.full_name) for sensitive fields.
-4. Use literal_value only for non-sensitive PUBLIC fields.
-5. After filling all fields, click the submit/next button.
-6. If you see CAPTCHA/OTP/password, stop and request user action.
-7. Never guess values — use only provided bindings.
-8. Output ONLY valid JSON."""
+2. If the task requires reaching another page (e.g. "Click 'Download Aadhaar'"),
+   click the link or button whose name matches the task. Use the exact ref.
+3. Fill fields in order from top to bottom.
+4. Use value_ref (e.g., USER.full_name) for sensitive fields.
+5. Use literal_value only for non-sensitive PUBLIC fields.
+6. After filling all fields, click the submit/next button.
+7. If you see CAPTCHA/OTP/password, stop and request user action.
+8. Never guess values — use only provided bindings.
+9. Only choose "stop" when the task is complete or genuinely impossible
+   from this page. Do NOT stop merely because the target is not in the
+   visible list — prefer scroll_to or the closest matching element.
+10. Output ONLY valid JSON."""
 
     user_prompt = f"""Current page: {page_state.url}
 Page type: {page_state.page_type}
 Title: {page_state.title}
+Interactive elements on page: {len(elements_info)}{'; list truncated to first ' + str(_MAX_ELEMENTS_FOR_LLM) if truncated else ''}
 
-Elements:
-{json.dumps(elements_info[:20], indent=2)}
+Elements (ref, role, name — match task keywords against "name"):
+{json.dumps(visible_elements, indent=2)}
 
 Field bindings:
 {json.dumps(bindings_info[:20], indent=2)}
@@ -175,10 +190,19 @@ What is the next action?"""
         )
 
         if response.parsed:
+            if response.parsed.get("action") == "stop":
+                # Deliberate planner stop — surface the reason so a 0-action
+                # finish is explainable in the UI instead of looking stuck.
+                reason = response.parsed.get("reason") or "planner decided no further action"
+                workflow.add_checkpoint(f"Planner stopped: {reason}")
+                logger.info("Planner stopped: %s", reason)
             return _parse_llm_action(response.parsed, observation.observation_id)
 
     except Exception as e:
         logger.warning("LLM planning failed: %s", e)
+        # Record the failure so the runner reports WAITING_FOR_USER instead
+        # of mislabeling an outage as READY_FOR_SUBMISSION (audit C12).
+        workflow.set_error("recoverable", f"LLM planning failed: {e}")
 
     return None
 
@@ -187,13 +211,25 @@ def plan_deterministic(
     workflow: WorkflowState,
     observation: PageObservation,
     mapping_result: MappingResult,
+    value_resolver=None,
 ) -> BrowserAction | None:
     """Deterministic planning fallback — no LLM needed.
 
     Strategy: fill HIGH-confidence fields in order, then click submit.
+
+    Audit C4 fix: combobox selections resolve the bound reference through
+    the ValueResolver (vault) instead of re-selecting whatever is already
+    selected; checkboxes only act when their current state differs;
+    fields already holding the correct value are skipped rather than
+    replayed into UNCERTAIN verification loops.
     """
     page_state = observation.page_state
     obs_id = observation.observation_id
+
+    def _resolve(ref: str) -> str | None:
+        if value_resolver is None:
+            return None
+        return value_resolver.resolve(ref)
 
     for binding in mapping_result.bindings:
         if binding.field_ref in workflow.completed_bindings:
@@ -201,7 +237,18 @@ def plan_deterministic(
         if binding.confidence.value != "high" or not binding.binding:
             continue
 
+        element = next(
+            (el for el in page_state.elements if el.ref == binding.field_ref),
+            None,
+        )
+
         if binding.field_type == "textbox":
+            desired = _resolve(binding.binding)
+            if not desired:
+                continue
+            # Already holds the right value → nothing to do
+            if element is not None and (element.value or "").strip() == desired.strip():
+                continue
             return BrowserAction(
                 action="fill",
                 target_ref=binding.field_ref,
@@ -210,16 +257,25 @@ def plan_deterministic(
             )
 
         if binding.field_type == "combobox":
-            for el in page_state.elements:
-                if el.ref == binding.field_ref and el.selected_options:
-                    return BrowserAction(
-                        action="select",
-                        target_ref=binding.field_ref,
-                        option=el.selected_options[0],
-                        observation_id=obs_id,
-                    )
+            desired = _resolve(binding.binding)
+            if not desired:
+                continue
+            # Already showing the desired option → nothing to do
+            if element is not None and element.selected_options:
+                current = element.selected_options[0].strip()
+                if current == desired.strip():
+                    continue
+            return BrowserAction(
+                action="select",
+                target_ref=binding.field_ref,
+                option=desired,
+                observation_id=obs_id,
+            )
 
         if binding.field_type == "checkbox":
+            # Only check when currently unchecked; a checked box is done
+            if element is not None and element.checked:
+                continue
             return BrowserAction(
                 action="check",
                 target_ref=binding.field_ref,

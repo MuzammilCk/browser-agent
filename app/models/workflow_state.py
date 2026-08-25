@@ -89,6 +89,11 @@ class WorkflowState(BaseModel):
         default="",
         description="Observation ID for the pending action (stale-ref prevention)",
     )
+    pending_target_signature: dict | None = Field(
+        default=None,
+        description="Role + accessible name of the pending target, used to "
+        "verify after resume that the ref still points at the same element",
+    )
 
     # Field mapping state
     completed_bindings: list[str] = Field(

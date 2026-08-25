@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automation — BharatGov</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-orange-500: #e07020;
+            --color-green-500: #2ea86a;
+            --color-red-500: #d44a4a;
+            --color-amber-500: #d4952a;
+            --gray-50: #e8edf5;
+            --gray-100: #c5cdd9;
+            --gray-200: #8e9bb8;
+            --gray-300: #5e6d8a;
+            --gray-400: #3d4f6f;
+            --gray-600: #1e2d4a;
+            --gray-700: #1c2a45;
+            --gray-800: #162036;
+            --gray-900: #111a2e;
+            --gray-950: #0b1120;
+            --bg-base: var(--gray-950);
+            --bg-surface: var(--gray-900);
+            --bg-card: var(--gray-800);
+            --bg-card-hover: var(--gray-700);
+            --border-subtle: var(--gray-600);
+            --border-default: var(--gray-500);
+            --text-primary: var(--gray-50);
+            --text-secondary: var(--gray-200);
+            --text-muted: var(--gray-300);
+            --color-primary: var(--color-orange-500);
+            --color-primary-dim: rgba(224, 112, 32, 0.12);
+            --color-success: var(--color-green-500);
+            --color-success-dim: rgba(46, 168, 106, 0.1);
+            --color-danger: var(--color-red-500);
+            --color-danger-dim: rgba(212, 74, 74, 0.1);
+            --color-warning: var(--color-amber-500);
+            --color-warning-dim: rgba(212, 149, 42, 0.1);
+            --color-info: #3a8fd4;
+            --color-info-dim: rgba(58, 143, 212, 0.1);
+            --radius: 10px;
+            --radius-sm: 6px;
+            --spacing-2xs: 2px;
+            --spacing-xs: 4px;
+            --spacing-sm: 8px;
+            --spacing-md: 16px;
+            --spacing-lg: 24px;
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            min-height: 100dvh;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+            display: flex;
+            flex-direction: column;
+        }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+        :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--spacing-md);
+            padding: var(--spacing-sm) var(--spacing-lg);
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border-default);
+            flex-shrink: 0;
+        }
+        .topbar-id { display: flex; align-items: center; gap: var(--spacing-sm); min-width: 0; }
+        .topbar-id h1 {
+            font-size: 1rem;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .topbar-meta {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .badge {
+            padding: 2px var(--spacing-sm);
+            border-radius: 100px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+        .status-running { background: var(--color-primary-dim); color: var(--color-primary); }
+        .status-completed { background: var(--color-success-dim); color: var(--color-success); }
+        .status-failed { background: var(--color-danger-dim); color: var(--color-danger); }
+        .status-waiting { background: var(--color-warning-dim); color: var(--color-warning); }
+        .btn {
+            padding: var(--spacing-xs) var(--spacing-md);
+            border-radius: var(--radius-sm);
+            border: none;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+            min-height: 34px;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+            text-decoration: none;
+        }
+        .btn-danger { background: var(--color-danger); color: white; }
+        .btn-secondary { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-default); }
+        .btn-secondary:hover { border-color: var(--text-muted); color: var(--text-primary); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+
+        .layout {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+        }
+        .stage {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            padding: var(--spacing-md);
+            gap: var(--spacing-md);
+            overflow: hidden;
+        }
+        .confirm-box {
+            display: none;
+            padding: var(--spacing-md);
+            border: 1px solid var(--color-warning);
+            border-radius: var(--radius);
+            background: var(--color-warning-dim);
+        }
+        .confirm-box.active { display: block; }
+        .confirm-box .title { font-weight: 700; margin-bottom: var(--spacing-2xs); }
+        .confirm-box .desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: var(--spacing-sm);
+            word-break: break-word;
+        }
+        .confirm-box .row { display: flex; gap: var(--spacing-sm); }
+        .btn-primary { background: var(--color-primary); color: white; }
+        .screenshot-wrap {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        .screenshot-wrap img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .placeholder { color: var(--text-muted); font-size: 0.8rem; }
+        .task-box {
+            padding: var(--spacing-sm) var(--spacing-md);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+        .task-box .label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+        .sidebar {
+            width: 340px;
+            flex-shrink: 0;
+            border-left: 1px solid var(--border-subtle);
+            overflow-y: auto;
+            padding: var(--spacing-md);
+        }
+        .sidebar-title {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: var(--spacing-sm);
+        }
+        .log-entry {
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-sm);
+            font-size: 0.8rem;
+            margin-bottom: var(--spacing-xs);
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+        }
+        .log-entry .action { font-weight: 600; }
+        .log-entry .msg { color: var(--text-secondary); margin-top: 2px; }
+        .log-entry.success { border-left: 2px solid var(--color-success); }
+        .log-entry.failed { border-left: 2px solid var(--color-danger); }
+        .log-entry.info { border-left: 2px solid var(--color-info); }
+        .empty { color: var(--text-muted); font-size: 0.8rem; }
+
+        @media (max-width: 768px) {
+            .layout { flex-direction: column; }
+            .sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border-subtle); max-height: 40vh; }
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="topbar-id">
+            <h1 id="wfDomain">Automation</h1>
+            <span class="badge status-running" id="wfBadge" aria-live="polite">Starting</span>
+            <span class="topbar-meta" id="wfMeta" aria-live="polite"></span>
+        </div>
+        <div style="display:flex;gap:0.5rem;">
+            <button class="btn btn-danger" id="stopBtn" onclick="abort()">Stop</button>
+        </div>
+    </div>
+    <div class="layout">
+        <div class="stage">
+            <div class="confirm-box" id="confirmBox" role="alert">
+                <div class="title">Confirmation required</div>
+                <div class="desc" id="confirmDesc"></div>
+                <div class="row">
+                    <button class="btn btn-primary" onclick="confirmPending(true)">Approve &amp; continue</button>
+                    <button class="btn btn-secondary" onclick="confirmPending(false)">Decline</button>
+                </div>
+            </div>
+            <div class="task-box">
+                <div class="label">Task</div>
+                <div id="wfTask">—</div>
+            </div>
+            <div class="screenshot-wrap" id="screenshotWrap" aria-label="Automation screenshot">
+                <div class="placeholder">Waiting for screenshot...</div>
+            </div>
+        </div>
+        <aside class="sidebar" role="log" aria-label="Automation action log" aria-live="polite">
+            <div class="sidebar-title">Action Log</div>
+            <div id="logList"><div class="empty">No actions yet.</div></div>
+        </aside>
+    </div>
+
+    <script>
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const workflowId = decodeURIComponent(parts[parts.length - 1]);
+        let finished = false;
+        let pollTimer = null;
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function setBadge(status) {
+            const badge = document.getElementById('wfBadge');
+            badge.textContent = status;
+            if (['running', 'starting', 'launching_browser', 'navigating'].includes(status)) {
+                badge.className = 'badge status-running';
+            } else if (status === 'completed') {
+                badge.className = 'badge status-completed';
+            } else if (status === 'failed' || status === 'aborted') {
+                badge.className = 'badge status-failed';
+            } else if (status.includes('waiting') || status === 'ready_for_confirmation' || status === 'ready_for_submission') {
+                badge.className = 'badge status-waiting';
+            } else {
+                badge.className = 'badge status-running';
+            }
+        }
+
+        async function poll() {
+            if (!workflowId || finished) return;
+            try {
+                const res = await fetch(`/api/automate/${encodeURIComponent(workflowId)}`);
+                const wf = await res.json();
+                if (wf.error) {
+                    document.getElementById('wfTask').textContent = wf.error;
+                    stopPoll();
+                    return;
+                }
+
+                document.title = `${wf.domain} — ${wf.status} — BharatGov`;
+                document.getElementById('wfDomain').textContent = wf.domain;
+                document.getElementById('wfTask').textContent = wf.task || '—';
+                setBadge(wf.status);
+                document.getElementById('wfMeta').textContent =
+                    wf.total_actions ? `${wf.successful_actions}/${wf.total_actions} actions` : '';
+
+                const box = document.getElementById('confirmBox');
+                if (wf.status === 'ready_for_confirmation' && wf.pending_action) {
+                    const pa = wf.pending_action;
+                    document.getElementById('confirmDesc').textContent =
+                        `${pa.action}${pa.target_ref ? ' on ' + pa.target_ref : ''}` +
+                        (pa.value_ref ? ` (${pa.value_ref})` : '') +
+                        (pa.reason ? ` — ${pa.reason}` : '');
+                    box.classList.add('active');
+                } else {
+                    box.classList.remove('active');
+                }
+
+                let logHtml = '';
+                (wf.actions || []).forEach(a => {
+                    logHtml += `<div class="log-entry ${a.success ? 'success' : 'failed'}">
+                        <div class="action">${escapeHtml(a.type)} ${escapeHtml(a.target || '')}</div>
+                        <div class="msg">${escapeHtml(a.message)}</div>
+                    </div>`;
+                });
+                (wf.checkpoints || []).forEach(cp => {
+                    logHtml += `<div class="log-entry info">
+                        <div class="action">Checkpoint</div>
+                        <div class="msg">${escapeHtml(cp)}</div>
+                    </div>`;
+                });
+                if (wf.error) {
+                    logHtml += `<div class="log-entry failed">
+                        <div class="action">Error</div>
+                        <div class="msg">${escapeHtml(wf.error)}</div>
+                    </div>`;
+                }
+                const logList = document.getElementById('logList');
+                const stick = logList.scrollHeight - logList.scrollTop < 40;
+                logList.innerHTML = logHtml || '<div class="empty">No actions yet.</div>';
+
+                const wrap = document.getElementById('screenshotWrap');
+                if (wf.screenshot_count > 0 && !finished) {
+                    const img = wrap.querySelector('img');
+                    if (!img) {
+                        wrap.innerHTML = `<img src="/api/automate/${encodeURIComponent(workflowId)}/screenshot?step=latest" alt="Automation screenshot" />`;
+                    } else {
+                        img.src = `/api/automate/${encodeURIComponent(workflowId)}/screenshot?step=latest&t=${Date.now()}`;
+                    }
+                }
+
+                if (wf.finished) stopPoll();
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+
+        function stopPoll() {
+            finished = true;
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            document.getElementById('stopBtn').disabled = true;
+        }
+
+        async function abort() {
+            try { await fetch(`/api/automate/${encodeURIComponent(workflowId)}/abort`, { method: 'POST' }); } catch (e) {}
+        }
+
+        async function confirmPending(approved) {
+            try {
+                await fetch(`/api/automate/${encodeURIComponent(workflowId)}/confirm`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ approved }),
+                });
+                document.getElementById('confirmBox').classList.remove('active');
+            } catch (e) {}
+        }
+
+        if (!workflowId || /^[0-9a-f]{8}$/i.test(workflowId) === false) {
+            document.getElementById('wfTask').textContent = 'Invalid workflow id in URL.';
+        } else {
+            poll();
+            pollTimer = setInterval(poll, 1500);
+        }
+    </script>
+</body>
+</html>

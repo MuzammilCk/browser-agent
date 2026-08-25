@@ -74,6 +74,25 @@ class TestClickAction:
             submit_btn = next(e for e in obs.page_state.elements if e.role == "button")
             action = BrowserAction(action="click", target_ref=submit_btn.ref)
             result = await executor.execute(page, action, obs)
+            # "Submit Application" is HIGH_RISK → REQUIRE_CONFIRMATION.
+            # Without explicit user approval the executor must refuse (audit B2).
+            assert result.success is False
+            assert "REQUIRE_CONFIRMATION" in result.message
+            assert result.verification is None
+            assert result.post_observation is None
+
+    @pytest.mark.asyncio
+    async def test_click_button_with_user_confirmation(self, settings, observer) -> None:
+        """Audit C1: an explicitly user-confirmed high-risk action executes."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_BASE}/simple.html")
+            obs = await observer.observe(page)
+            submit_btn = next(e for e in obs.page_state.elements if e.role == "button")
+            confirmed_executor = BrowserExecutor()
+            action = BrowserAction(action="click", target_ref=submit_btn.ref)
+            result = await confirmed_executor.execute(
+                page, action, obs, user_confirmed=True,
+            )
             # Submit button on data: URL may produce UNCERTAIN (no observable change)
             # This is correct behavior — UNCERTAIN stops progression
             assert result.verification is not None
