@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from playwright.async_api import Playwright
@@ -52,21 +53,67 @@ class BrowserManager:
             raise RuntimeError("Browser not started. Call start() first.")
         return self._context
 
+    @staticmethod
+    def _check_subprocess_support() -> None:
+        """Verify the event loop supports subprocesses (required by Playwright).
+
+        On Windows, SelectorEventLoop does not support subprocesses.
+        This is common when uvicorn runs with reload=True, which forces
+        SelectorEventLoop on Windows (see uvicorn docs on event loops).
+        
+        Previously this tried to monkey-patch the loop, but that cannot work:
+        ProactorEventLoop._make_subprocess_transport requires IOCP internals
+        that don't exist on a SelectorEventLoop instance.
+        
+        Raises RuntimeError with actionable guidance if unsupported.
+        """
+        import sys
+        if sys.platform != "win32":
+            return
+
+        import asyncio
+        loop = asyncio.get_running_loop()
+        from asyncio import base_events
+        
+        if type(loop)._make_subprocess_transport is base_events.BaseEventLoop._make_subprocess_transport:
+            raise RuntimeError(
+                "Playwright requires subprocess support, but the current event loop is "
+                f"{type(loop).__name__} which does not support subprocesses on Windows.\n\n"
+                "This typically happens when uvicorn runs with reload=True or multiple workers,\n"
+                "because uvicorn uses SelectorEventLoop for those modes on Windows.\n\n"
+                "Fix: run without --reload (e.g. 'python run.py' without reload enabled),\n"
+                "or use a production server like gunicorn with uvicorn workers."
+            )
+
     async def start(self) -> None:
-        """Launch Playwright and open a Chromium browser."""
-        logger.info("Starting Playwright...")
+        """Launch Playwright and open a Chromium browser.
+
+        browser_mode='user' → headed, resizable window (user controls size)
+        browser_mode='test' → headless, fixed 1280×720 viewport
+        """
+        user_mode = self._settings.browser_mode == "user"
+        headless = self._settings.headless if not user_mode else False
+
+        logger.info("Starting Playwright (mode=%s)...", "user" if user_mode else "test")
+        self._check_subprocess_support()
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(
-            headless=self._settings.headless,
+            headless=headless,
         )
-        self._context = await self._browser.new_context(
-            viewport={"width": 1280, "height": 720},
-            user_agent=(
+
+        ctx_kwargs: dict[str, object] = {
+            "ignore_https_errors": True,
+            "user_agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
-        )
+        }
+        # In user mode, skip fixed viewport so the user can resize freely
+        if not user_mode:
+            ctx_kwargs["viewport"] = {"width": 1280, "height": 720}
+
+        self._context = await self._browser.new_context(**ctx_kwargs)
         self._page = await self._context.new_page()
         logger.info("Browser started successfully.")
 

@@ -184,11 +184,21 @@ async def start_automation(body: dict) -> dict:
     url = entry.url
     workflow_id = str(uuid.uuid4())[:8]
 
+    # Look up detailed instructions for this task from the registry
+    task_instructions = task  # default: use the raw task name
+    if task:
+        for t in entry.tasks:
+            if t.name == task:
+                task_instructions = t.instructions or t.description or task
+                break
+
+    effective_task = task_instructions or f"Navigate to {entry.official_name}"
+
     # Store initial state
     _workflows[workflow_id] = {
         "workflow_id": workflow_id,
         "domain": domain,
-        "task": task or f"Navigate to {entry.official_name}",
+        "task": effective_task,
         "url": url,
         "status": "starting",
         "current_url": url,
@@ -200,7 +210,7 @@ async def start_automation(body: dict) -> dict:
     }
 
     # Launch background automation
-    asyncio.create_task(_run_automation(workflow_id, url, task or f"Navigate to {entry.official_name}"))
+    asyncio.create_task(_run_automation(workflow_id, url, effective_task))
 
     return {
         "workflow_id": workflow_id,

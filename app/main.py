@@ -1,5 +1,4 @@
 """Government Browser Agent — FastAPI entry point."""
-
 from __future__ import annotations
 
 import logging
@@ -8,7 +7,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 
 from app.config.settings import get_settings
 
@@ -44,11 +43,19 @@ app.include_router(api_router)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
-    """Health check endpoint."""
+    """Health endpoint."""
     return {"status": "ok", "service": "government-browser-agent"}
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index() -> FileResponse:
-    """Serve the frontend."""
-    return FileResponse(FRONTEND_DIR / "index.html")
+async def index() -> HTMLResponse:
+    """Serve the frontend — reads fresh from disk, no caching."""
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(
+        content=html,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
