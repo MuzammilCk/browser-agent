@@ -70,6 +70,40 @@ class WorkflowState(BaseModel):
         description="Current workflow status",
     )
 
+    # Planning-mode visibility (P0-37 / audit Z8): answerable at a glance
+    # whether the LLM is actually in the loop for this workflow.
+    planning_mode: str = Field(
+        default="deterministic_fallback",
+        description="'llm' | 'deterministic_fallback'",
+    )
+    llm_model: str | None = Field(
+        default=None,
+        description="Resolved model string when planning_mode == 'llm', else null",
+    )
+    llm_disabled_reason: str | None = Field(
+        default=None,
+        description="Why the LLM is not in use: 'no_api_key' or "
+        "'gateway_init_failed: <msg>'; null when the LLM is active",
+    )
+
+    # Vault visibility (audit Z3): an empty vault is visible from workflow
+    # state, not only from server console logs.
+    vault_loaded: bool = Field(
+        default=False,
+        description="True when at least one vault field has a value",
+    )
+    vault_warning: str | None = Field(
+        default=None,
+        description="Human-readable warning when the vault is empty",
+    )
+
+    # Vision fallback (audit Z7 / P0-16): budget is one attempt per
+    # workflow, taken only at a confirmed planning stall.
+    vision_fallback_attempts: int = Field(
+        default=0,
+        description="Number of vision-fallback passes attempted (max 1)",
+    )
+
     # Observation tracking
     current_observation_id: str = Field(
         default="",

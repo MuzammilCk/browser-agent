@@ -12,6 +12,20 @@ from pydantic_settings import BaseSettings
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# Anonymous free-tier model shipped as fallback default (audit Z6):
+# contested data retention — must never silently process real PII.
+ANONYMOUS_DEFAULT_MODEL = "stealth/ox-alpha"
+
+# OpenRouter marks anonymous/free-tier models with a ":free" suffix.
+FREE_TIER_SUFFIX = ":free"
+
+
+def is_free_tier_model(model: str | None) -> bool:
+    """True when a model string denotes an anonymous/free-tier offering."""
+    if not model:
+        return False
+    return model == ANONYMOUS_DEFAULT_MODEL or model.endswith(FREE_TIER_SUFFIX)
+
 
 class Settings(BaseSettings):
     """Application configuration. Reads from .env and environment variables."""
@@ -19,7 +33,7 @@ class Settings(BaseSettings):
     # OpenRouter
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_model: str = Field(
-        default="stealth/ox-alpha",
+        default=ANONYMOUS_DEFAULT_MODEL,
         description=(
             "Primary reasoning model. Note: 'stealth/ox-alpha' is an anonymous "
             "free-tier model with contested data retention. For production use "
@@ -43,6 +57,14 @@ class Settings(BaseSettings):
         ge=5,
         le=300,
         description="Timeout for OpenRouter API calls",
+    )
+    allow_anonymous_model_with_vault: bool = Field(
+        default=False,
+        description=(
+            "Explicit override: permit running the anonymous default model "
+            "while a populated vault (real personal data) is present. "
+            "Leave false to refuse such runs at start."
+        ),
     )
 
     # Vault encryption (audit B6)

@@ -5,219 +5,327 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Automation — BharatGov</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&subset=devanagari&display=swap" rel="stylesheet">
     <style>
         :root {
-            --color-orange-500: #e07020;
-            --color-green-500: #2ea86a;
-            --color-red-500: #d44a4a;
-            --color-amber-500: #d4952a;
-            --gray-50: #e8edf5;
-            --gray-100: #c5cdd9;
-            --gray-200: #8e9bb8;
-            --gray-300: #5e6d8a;
-            --gray-400: #3d4f6f;
-            --gray-600: #1e2d4a;
-            --gray-700: #1c2a45;
-            --gray-800: #162036;
-            --gray-900: #111a2e;
-            --gray-950: #0b1120;
-            --bg-base: var(--gray-950);
-            --bg-surface: var(--gray-900);
-            --bg-card: var(--gray-800);
-            --bg-card-hover: var(--gray-700);
-            --border-subtle: var(--gray-600);
-            --border-default: var(--gray-500);
-            --text-primary: var(--gray-50);
-            --text-secondary: var(--gray-200);
-            --text-muted: var(--gray-300);
-            --color-primary: var(--color-orange-500);
-            --color-primary-dim: rgba(224, 112, 32, 0.12);
-            --color-success: var(--color-green-500);
-            --color-success-dim: rgba(46, 168, 106, 0.1);
-            --color-danger: var(--color-red-500);
-            --color-danger-dim: rgba(212, 74, 74, 0.1);
-            --color-warning: var(--color-amber-500);
-            --color-warning-dim: rgba(212, 149, 42, 0.1);
-            --color-info: #3a8fd4;
-            --color-info-dim: rgba(58, 143, 212, 0.1);
-            --radius: 10px;
+            --paper: #F4F5F6;
+            --surface: #FFFFFF;
+            --ink: #1B1F2A;
+            --ink-muted: #5B6472;
+            --indigo: #2C4472;
+            --marigold: #C8862B;
+            --verified: #2F6F4E;
+            --attention: #A23B3B;
+
+            --border: #E3E6EA;
+            --border-strong: #D3D8DF;
+            --indigo-tint: rgba(44, 68, 114, 0.08);
+            --marigold-tint: rgba(200, 134, 43, 0.10);
+            --verified-tint: rgba(47, 111, 78, 0.10);
+            --attention-tint: rgba(162, 59, 59, 0.10);
+
+            --font-display: 'Archivo', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+            --space-2xs: 4px;
+            --space-xs: 8px;
+            --space-sm: 12px;
+            --space-md: 16px;
+            --space-lg: 24px;
+
+            --radius: 8px;
             --radius-sm: 6px;
-            --spacing-2xs: 2px;
-            --spacing-xs: 4px;
-            --spacing-sm: 8px;
-            --spacing-md: 16px;
-            --spacing-lg: 24px;
+            --transition-base: 160ms ease;
         }
+
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html { font-size: 16px; }
         body {
-            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-base);
-            color: var(--text-primary);
+            font-family: var(--font-body);
+            background: var(--paper);
+            color: var(--ink);
             min-height: 100dvh;
             line-height: 1.55;
+            font-size: 1rem;
             -webkit-font-smoothing: antialiased;
             display: flex;
             flex-direction: column;
         }
-        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
-        :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+        ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+        :focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; border-radius: var(--radius-sm); }
 
         .topbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: var(--spacing-md);
-            padding: var(--spacing-sm) var(--spacing-lg);
-            background: var(--bg-surface);
-            border-bottom: 1px solid var(--border-default);
+            gap: var(--space-md);
+            padding: var(--space-sm) var(--space-lg);
+            background: var(--surface);
+            border-bottom: 1px solid var(--border-strong);
             flex-shrink: 0;
         }
-        .topbar-id { display: flex; align-items: center; gap: var(--spacing-sm); min-width: 0; }
+        .topbar-id { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
         .topbar-id h1 {
-            font-size: 1rem;
+            font-family: var(--font-display);
+            font-size: 1.05rem;
             font-weight: 700;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            color: var(--ink);
         }
         .topbar-meta {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--ink-muted);
             white-space: nowrap;
         }
         .badge {
-            padding: 2px var(--spacing-sm);
+            padding: 2px var(--space-sm);
             border-radius: 100px;
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             font-weight: 600;
             text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border: 1px solid var(--border-strong);
+            color: var(--ink-muted);
+            background: transparent;
             flex-shrink: 0;
         }
-        .status-running { background: var(--color-primary-dim); color: var(--color-primary); }
-        .status-completed { background: var(--color-success-dim); color: var(--color-success); }
-        .status-failed { background: var(--color-danger-dim); color: var(--color-danger); }
-        .status-waiting { background: var(--color-warning-dim); color: var(--color-warning); }
+        .status-running { background: var(--indigo-tint); color: var(--indigo); border-color: transparent; }
+        .status-completed { background: var(--verified-tint); color: var(--verified); border-color: transparent; }
+        .status-failed { background: var(--attention-tint); color: var(--attention); border-color: transparent; }
+        .status-waiting { background: transparent; color: var(--ink-muted); }
+
         .btn {
-            padding: var(--spacing-xs) var(--spacing-md);
+            padding: 0.45rem 0.95rem;
             border-radius: var(--radius-sm);
-            border: none;
-            font-size: 0.8rem;
-            font-weight: 500;
+            border: 1px solid transparent;
+            font-size: 0.9375rem;
+            font-weight: 600;
             cursor: pointer;
-            font-family: inherit;
-            min-height: 34px;
+            font-family: var(--font-body);
+            min-height: 40px;
             display: inline-flex;
             align-items: center;
-            gap: var(--spacing-xs);
+            gap: var(--space-xs);
             text-decoration: none;
         }
-        .btn-danger { background: var(--color-danger); color: white; }
-        .btn-secondary { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-default); }
-        .btn-secondary:hover { border-color: var(--text-muted); color: var(--text-primary); }
+        .btn-danger { background: var(--attention); color: #fff; }
+        .btn-danger:hover { background: #8c3232; }
+        .btn-secondary { background: transparent; color: var(--ink); border-color: var(--border-strong); }
+        .btn-secondary:hover { border-color: var(--ink-muted); }
+        .btn-primary { background: var(--indigo); color: #fff; }
+        .btn-primary:hover { background: #243a61; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
-        .layout {
-            display: flex;
-            flex: 1;
-            min-height: 0;
-        }
+        .layout { display: flex; flex: 1; min-height: 0; }
+
         .stage {
             flex: 1;
             min-width: 0;
             display: flex;
             flex-direction: column;
-            padding: var(--spacing-md);
-            gap: var(--spacing-md);
+            padding: var(--space-md);
+            gap: var(--space-md);
             overflow: hidden;
         }
-        .confirm-box {
+
+        /* ── Handoff card (marigold) ── */
+        .handoff-card {
             display: none;
-            padding: var(--spacing-md);
-            border: 1px solid var(--color-warning);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-top: 3px solid var(--marigold);
             border-radius: var(--radius);
-            background: var(--color-warning-dim);
+            padding: 0.9rem 1rem 1rem;
+            animation: handoffIn var(--transition-base) ease;
         }
-        .confirm-box.active { display: block; }
-        .confirm-box .title { font-weight: 700; margin-bottom: var(--spacing-2xs); }
-        .confirm-box .desc {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            margin-bottom: var(--spacing-sm);
+        .handoff-card.active { display: block; }
+        @keyframes handoffIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .handoff-head {
+            font-family: var(--font-display);
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: var(--space-2xs);
+        }
+        .handoff-desc {
+            font-size: 0.9375rem;
+            color: var(--ink-muted);
+            margin-bottom: 0.7rem;
             word-break: break-word;
+            line-height: 1.5;
         }
-        .confirm-box .row { display: flex; gap: var(--spacing-sm); }
-        .btn-primary { background: var(--color-primary); color: white; }
+        .handoff-actions { display: flex; gap: var(--space-sm); }
+
+        /* ── Task box ── */
+        .task-box {
+            padding: var(--space-sm) var(--space-md);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.9375rem;
+            color: var(--ink-muted);
+            flex-shrink: 0;
+        }
+        .task-box .label {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--ink-muted);
+            margin-bottom: 2px;
+        }
+        .task-box .value { color: var(--ink); }
+
+        /* ── Browser chrome frame ── */
         .screenshot-wrap {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        .chrome-bar {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            padding: var(--space-xs) var(--space-md);
+            border-bottom: 1px solid var(--border);
+            background: var(--paper);
+            flex-shrink: 0;
+        }
+        .chrome-dots { display: flex; gap: 6px; flex-shrink: 0; }
+        .chrome-dots span {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: var(--border-strong);
+            display: block;
+        }
+        .chrome-url {
+            flex: 1;
+            min-width: 0;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--ink-muted);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-full);
+            padding: 4px var(--space-md);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .chrome-shot {
             flex: 1;
             min-height: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: var(--bg-surface);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius);
+            padding: var(--space-sm);
             overflow: hidden;
         }
-        .screenshot-wrap img {
+        .chrome-shot img {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
-        }
-        .placeholder { color: var(--text-muted); font-size: 0.8rem; }
-        .task-box {
-            padding: var(--spacing-sm) var(--spacing-md);
-            background: var(--bg-surface);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius);
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            flex-shrink: 0;
-        }
-        .task-box .label {
-            font-size: 0.65rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: var(--text-muted);
-            margin-bottom: 2px;
-        }
-        .sidebar {
-            width: 340px;
-            flex-shrink: 0;
-            border-left: 1px solid var(--border-subtle);
-            overflow-y: auto;
-            padding: var(--spacing-md);
-        }
-        .sidebar-title {
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: var(--spacing-sm);
-        }
-        .log-entry {
-            padding: var(--spacing-xs) var(--spacing-sm);
             border-radius: var(--radius-sm);
-            font-size: 0.8rem;
-            margin-bottom: var(--spacing-xs);
-            background: var(--bg-card);
-            border: 1px solid var(--border-subtle);
         }
-        .log-entry .action { font-weight: 600; }
-        .log-entry .msg { color: var(--text-secondary); margin-top: 2px; }
-        .log-entry.success { border-left: 2px solid var(--color-success); }
-        .log-entry.failed { border-left: 2px solid var(--color-danger); }
-        .log-entry.info { border-left: 2px solid var(--color-info); }
-        .empty { color: var(--text-muted); font-size: 0.8rem; }
+        .placeholder { color: var(--ink-muted); font-size: 0.9375rem; }
+
+        /* ── Trace ledger ── */
+        .sidebar {
+            width: 360px;
+            flex-shrink: 0;
+            border-left: 1px solid var(--border);
+            overflow-y: auto;
+            padding: var(--space-md);
+            background: var(--paper);
+        }
+        .trace-title {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--ink-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: var(--space-sm);
+        }
+        .trace-empty { font-size: 0.9375rem; color: var(--ink-muted); }
+        .trace-row {
+            display: flex;
+            gap: var(--space-sm);
+            padding: var(--space-xs) 0 var(--space-sm);
+            border-left: 2px solid transparent;
+            padding-left: var(--space-sm);
+            margin-left: -2px;
+            border-bottom: 1px solid var(--border);
+            color: var(--ink-muted);
+            animation: traceIn var(--transition-base) ease;
+        }
+        .trace-row:last-child { border-bottom: none; }
+        @keyframes traceIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .trace-row.current { border-left-color: var(--indigo); color: var(--ink); }
+        .trace-num {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--ink-muted);
+            padding-top: 1px;
+            flex-shrink: 0;
+            min-width: 18px;
+        }
+        .trace-main { flex: 1; min-width: 0; }
+        .trace-top { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: 2px; }
+        .trace-label {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            color: var(--ink-muted);
+            text-transform: uppercase;
+        }
+        .trace-chip {
+            font-family: var(--font-mono);
+            font-size: 0.62rem;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            padding: 1px 6px;
+            border-radius: var(--radius-full);
+        }
+        .trace-chip.ok { color: var(--verified); background: var(--verified-tint); }
+        .trace-chip.bad { color: var(--attention); background: var(--attention-tint); }
+        .trace-chip.needs { color: var(--marigold); background: var(--marigold-tint); }
+        .trace-text { font-size: 0.9375rem; color: var(--ink); line-height: 1.45; }
+        .trace-row:not(.current) .trace-text { color: var(--ink-muted); }
+        .trace-msg { font-size: 0.8125rem; color: var(--ink-muted); margin-top: 2px; line-height: 1.45; }
 
         @media (max-width: 768px) {
             .layout { flex-direction: column; }
-            .sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border-subtle); max-height: 40vh; }
+            .sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border); max-height: 40vh; }
+            .btn { min-height: 44px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
@@ -234,25 +342,31 @@
     </div>
     <div class="layout">
         <div class="stage">
-            <div class="confirm-box" id="confirmBox" role="alert">
-                <div class="title">Confirmation required</div>
-                <div class="desc" id="confirmDesc"></div>
-                <div class="row">
+            <div class="handoff-card" id="confirmBox" role="alert">
+                <div class="handoff-head">Your action is needed</div>
+                <div class="handoff-desc" id="confirmDesc"></div>
+                <div class="handoff-actions">
                     <button class="btn btn-primary" onclick="confirmPending(true)">Approve &amp; continue</button>
                     <button class="btn btn-secondary" onclick="confirmPending(false)">Decline</button>
                 </div>
             </div>
             <div class="task-box">
                 <div class="label">Task</div>
-                <div id="wfTask">—</div>
+                <div class="value" id="wfTask">—</div>
             </div>
             <div class="screenshot-wrap" id="screenshotWrap" aria-label="Automation screenshot">
-                <div class="placeholder">Waiting for screenshot...</div>
+                <div class="chrome-bar">
+                    <div class="chrome-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <div class="chrome-url" id="wfUrl">about:blank</div>
+                </div>
+                <div class="chrome-shot">
+                    <div class="placeholder">Waiting for screenshot...</div>
+                </div>
             </div>
         </div>
-        <aside class="sidebar" role="log" aria-label="Automation action log" aria-live="polite">
-            <div class="sidebar-title">Action Log</div>
-            <div id="logList"><div class="empty">No actions yet.</div></div>
+        <aside class="sidebar" role="log" aria-label="Automation trace" aria-live="polite">
+            <div class="trace-title">Trace</div>
+            <div id="logList"><div class="trace-empty">No steps yet.</div></div>
         </aside>
     </div>
 
@@ -261,6 +375,7 @@
         const workflowId = decodeURIComponent(parts[parts.length - 1]);
         let finished = false;
         let pollTimer = null;
+        let traceRendered = 0;
 
         function escapeHtml(s) {
             return String(s == null ? '' : s)
@@ -285,6 +400,52 @@
             }
         }
 
+        function appendTrace(steps) {
+            const el = document.getElementById('logList');
+            if (el.querySelector('.trace-empty')) el.innerHTML = '';
+            const prev = el.querySelector('.trace-row.current');
+            if (prev) prev.classList.remove('current');
+
+            steps.forEach(s => {
+                const row = document.createElement('div');
+                row.className = 'trace-row' + (s.kind === 'needs' ? ' needs' : '');
+                const chip = s.kind === 'needs'
+                    ? '<span class="trace-chip needs">NEEDS YOU</span>'
+                    : s.ok
+                        ? '<span class="trace-chip ok">VERIFIED</span>'
+                        : '<span class="trace-chip bad">FAILED</span>';
+                const label = s.kind === 'needs' ? 'NEEDS YOU' : 'DID';
+                row.innerHTML = `
+                    <div class="trace-num">${String(s.n).padStart(2, '0')}</div>
+                    <div class="trace-main">
+                        <div class="trace-top"><span class="trace-label">${label}</span>${chip}</div>
+                        <div class="trace-text">${escapeHtml(s.text)}</div>
+                        ${s.msg ? `<div class="trace-msg">${escapeHtml(s.msg)}</div>` : ''}
+                    </div>`;
+                el.appendChild(row);
+            });
+
+            const rows = el.querySelectorAll('.trace-row');
+            if (rows.length) rows[rows.length - 1].classList.add('current');
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function buildSteps(wf) {
+            const steps = [];
+            const actions = wf.actions || [];
+            actions.forEach((a, i) => {
+                steps.push({ n: i + 1, kind: 'did', text: `${a.type || ''} ${a.target || ''}`.trim(), msg: a.message || '', ok: a.success });
+            });
+            const base = actions.length;
+            (wf.checkpoints || []).forEach((cp, i) => {
+                steps.push({ n: base + i + 1, kind: 'needs', text: String(cp), msg: '', ok: null });
+            });
+            if (wf.error) {
+                steps.push({ n: steps.length + 1, kind: 'err', text: wf.error, msg: '', ok: false });
+            }
+            return steps;
+        }
+
         async function poll() {
             if (!workflowId || finished) return;
             try {
@@ -299,6 +460,7 @@
                 document.title = `${wf.domain} — ${wf.status} — BharatGov`;
                 document.getElementById('wfDomain').textContent = wf.domain;
                 document.getElementById('wfTask').textContent = wf.task || '—';
+                document.getElementById('wfUrl').textContent = wf.current_url || 'about:blank';
                 setBadge(wf.status);
                 document.getElementById('wfMeta').textContent =
                     wf.total_actions ? `${wf.successful_actions}/${wf.total_actions} actions` : '';
@@ -315,30 +477,13 @@
                     box.classList.remove('active');
                 }
 
-                let logHtml = '';
-                (wf.actions || []).forEach(a => {
-                    logHtml += `<div class="log-entry ${a.success ? 'success' : 'failed'}">
-                        <div class="action">${escapeHtml(a.type)} ${escapeHtml(a.target || '')}</div>
-                        <div class="msg">${escapeHtml(a.message)}</div>
-                    </div>`;
-                });
-                (wf.checkpoints || []).forEach(cp => {
-                    logHtml += `<div class="log-entry info">
-                        <div class="action">Checkpoint</div>
-                        <div class="msg">${escapeHtml(cp)}</div>
-                    </div>`;
-                });
-                if (wf.error) {
-                    logHtml += `<div class="log-entry failed">
-                        <div class="action">Error</div>
-                        <div class="msg">${escapeHtml(wf.error)}</div>
-                    </div>`;
+                const steps = buildSteps(wf);
+                if (steps.length > traceRendered) {
+                    appendTrace(steps.slice(traceRendered));
+                    traceRendered = steps.length;
                 }
-                const logList = document.getElementById('logList');
-                const stick = logList.scrollHeight - logList.scrollTop < 40;
-                logList.innerHTML = logHtml || '<div class="empty">No actions yet.</div>';
 
-                const wrap = document.getElementById('screenshotWrap');
+                const wrap = document.querySelector('.chrome-shot');
                 if (wf.screenshot_count > 0 && !finished) {
                     const img = wrap.querySelector('img');
                     if (!img) {

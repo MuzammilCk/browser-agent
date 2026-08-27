@@ -38,7 +38,9 @@ app = FastAPI(
 # ── Mount API routes ──────────────────────────────────────
 
 from app.api.routes import router as api_router
+from app.api.vault_routes import router as vault_router
 app.include_router(api_router)
+app.include_router(vault_router)
 
 
 @app.get("/health")

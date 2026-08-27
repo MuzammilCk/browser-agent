@@ -223,3 +223,28 @@ executes → select completes → submit click gates again → `resume(approved=
 **Bonus fix found during live verification:** qualified labels ("Applicant Full Name") scored
 MEDIUM due to keyword-length dilution — token-coverage scoring now keeps them HIGH
 (`field_mapper.py`), unblocking the most common real-world label pattern.
+
+---
+
+## Remediation log (Aug 26, 2026 — Z1–Z8 from audit-zero-action-stall.md, per implementation-plan.md)
+
+Executed phase-by-phase under `context_fix_plan.md` Section 1 protocol (read → inspect →
+reproduce/write test → confirm → smallest fix → targeted tests → full suite). Baseline before
+work: **374 passed / 0 failed**. After all phases: **441 passed / 0 failed** (+67 new tests,
+one new permanent regression fixture class per finding). Skills discovered and validated via
+`find-skills` per milestone per protocol §2; no external skill outranked repo code + official docs.
+
+| Finding | Fix | Files |
+|---|---|---|
+| Z2 + Z5 + Z8 (Phase 1 — typed planning result, honest status; completes P0-13/P0-37) | New `PlanOutcome` variants (`ActionPlanned`/`PlanLLMError`/`NoValidAction`/`TaskComplete`) replace the overloaded `BrowserAction \| None`; `_handle_plan_outcome` dispatches by page_type — navigation/unknown stalls are WAITING_FOR_USER ("stalled"), never READY_FOR_SUBMISSION; unparseable structured LLM responses become surfaced errors instead of silent None; `planning_mode`/`llm_model`/`llm_disabled_reason` on WorkflowState + poll payload from the first iteration | `app/agent/planning_result.py` (new), `planner.py`, `runner.py`, `models/workflow_state.py`, `api/routes.py`, `llm/openrouter.py`, `tests/unit/test_plan_outcome.py` |
+| Z3 (Phase 2 — a way to put your data in) | `POST/GET /api/vault` (partial updates, unknown fields rejected via extra=forbid, responses carry field NAMES only); committed `user_vault.example.json` template + README; `data/vault/*` now gitignored (**plan assumed it already was — it was not**); empty vault surfaced as structured `vault_loaded`/`vault_warning` workflow fields, not just a log line | `app/api/vault_routes.py` (new), `main.py`, `.gitignore`, `data/vault/user_vault.example.json` + `README.md` (new), `models/workflow_state.py`, `runner.py`, `api/routes.py`, `tests/unit/test_vault_api.py` |
+| Z1 (Phase 3 — auth detection = active challenge; completes P0-18) | `"captcha"` removed from OTP keyword list; OTP detection requires an editable, enabled input-role element; CAPTCHA requires an entry box/img widget, an active dialog instructing one, or reCAPTCHA iframe metadata (frames now passed to detector); the exact audit repro (help link mentioning CAPTCHA → 90% "OTP") is a permanent regression test; true positives preserved | `app/browser/observer.py`, `tests/unit/test_auth_detection.py` |
+| Z4 (Phase 4 — relevance-ranked element selection) | Flat `[:120]` DOM-order slice replaced by task-keyword-overlap ranking with in-progress binding targets always protected; cap retained; prompt order stays DOM-stable; truncation note now says "top N by task relevance" | `app/agent/planner.py`, `tests/unit/test_element_ranking.py` |
+| Z6 (Phase 5 — model guardrails) | Free-tier detection = shipped anonymous default OR any OpenRouter `:free` model; populated-vault + free-tier runs refused BEFORE browser launch unless `ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true`; resolved model logged at start and visible in poll. **Operator note: this repo's real `.env` pins `dots-studio/dots-3-note-preview:free` — with a populated vault such runs will refuse until `OPENROUTER_MODEL` is pinned to a named provider or the override is set deliberately** | `app/config/settings.py`, `api/routes.py`, `.env.example`, `tests/unit/test_model_guardrails.py` |
+| Z7 (Phase 6 — vision fallback wired; completes P0-16) | One vision pass per workflow at a confirmed NO_VALID_ACTION stall: screenshot → multimodal model → named target grounded against observed refs (exact > containment; never guessed into actions, P0-41); clicks only; attempts + outcome recorded in checkpoints/trace; gated by `vision_fallback_enabled`; disabled path byte-identical to Phase 1 behavior | `app/agent/vision_fallback.py` (new), `runner.py`, `models/workflow_state.py` (`vision_fallback_attempts`), `api/routes.py`, `tests/unit/test_vision_fallback_wiring.py` |
+
+Not done here (deliberately, per plan): Phase 7 production backlog items (cost caps, injection
+fixture expansion, trace export endpoint, startup config checks) remain open; Capability
+Registry / tiered Model Router remains a separate future initiative.
+
+Test-count trail per phase: 374 → 393 → 403 → 415 → 422 → 434 → 441 (all `--ignore=tests/real_sites`).

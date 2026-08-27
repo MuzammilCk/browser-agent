@@ -27,7 +27,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from app.config.settings import get_settings
+from app.config.settings import (
+    ANONYMOUS_DEFAULT_MODEL,
+    Settings,
+    get_settings,
+    is_free_tier_model,
+)
 from app.models.workflow_state import WorkflowStatus
 from app.sites.registry import TrustedDomainRegistry, sanitize_task_instructions
 
@@ -88,6 +93,39 @@ def _evict_finished_workflows() -> None:
             break
         _workflows.pop(wid, None)
         _automation_tasks.pop(wid, None)
+
+
+def _vault_model_guard(
+    vault_loaded: bool,
+    model: str | None,
+    *,
+    allow_override: bool,
+) -> str | None:
+    """Refusal reason when real PII would ride an anonymous free-tier model.
+
+    Audit Z6: a populated vault (real personal data) plus a free-tier
+    model (contested data retention) must never combine silently. Free
+    tier means the shipped anonymous default OR any OpenRouter ``:free``
+    model — whichever way .env is configured. Returns None when the run
+    may proceed — including when there is no LLM at all (deterministic
+    mode keeps values local).
+    """
+    if not vault_loaded or not model:
+        return None
+    if not is_free_tier_model(model):
+        return None
+    if allow_override:
+        logger.warning(
+            "Free-tier model '%s' running WITH populated vault — "
+            "explicit override is set", model,
+        )
+        return None
+    return (
+        f"Refusing to start: real vault data would be processed by the "
+        f"free-tier model '{model}' (anonymous/contested data retention). "
+        f"Pin OPENROUTER_MODEL to a named provider in .env, or set "
+        f"ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true to override explicitly."
+    )
 
 
 # ── Site Registry Endpoints ────────────────────────────────
@@ -271,6 +309,10 @@ async def start_automation(body: AutomateRequest) -> dict:
         "checkpoints": [],
         "pending_action": None,
         "vault_loaded": False,
+        "vault_warning": None,
+        "planning_mode": None,
+        "llm_model": None,
+        "llm_disabled_reason": None,
         "confirm_event": asyncio.Event(),
         "approved": None,
     }
@@ -300,10 +342,66 @@ async def _run_automation(workflow_id: str, url: str, task: str) -> None:
     wf = _workflows[workflow_id]
     settings = get_settings()
 
-    manager = BrowserManager(settings)
+    manager: BrowserManager | None = None
     llm = None
     try:
         wf["status"] = "launching_browser"
+
+        # LLM gateway construction (P0-37 / Z8): whether the LLM is
+        # actually in the loop is written into the workflow record here —
+        # from the very first poll — instead of being a silent fallback
+        # to deterministic mode.
+        llm_disabled_reason = None
+        if settings.openrouter_api_key:
+            try:
+                from app.llm.openrouter import OpenRouterGateway
+                llm = OpenRouterGateway(settings)
+                wf["llm_model"] = settings.openrouter_model
+                logger.info(
+                    "Automation %s: planning with model '%s'",
+                    workflow_id, settings.openrouter_model,
+                )
+            except Exception as e:
+                logger.warning("Could not create LLM gateway: %s", e)
+                llm_disabled_reason = f"gateway_init_failed: {e}"
+        else:
+            llm_disabled_reason = "no_api_key"
+        wf["planning_mode"] = "llm" if llm else "deterministic_fallback"
+        wf["llm_disabled_reason"] = llm_disabled_reason
+
+        # Audit C2 fix: load the persisted vault + documents so value_ref
+        # actions resolve against real data instead of an empty UserVault.
+        # Audit Z3 fix: emptiness is surfaced as structured workflow state,
+        # not only a server-console log line. Loaded BEFORE the browser
+        # launches so the Z6 guard below can refuse before anything runs.
+        vault_manager = VaultManager(
+            settings.data_dir / "vault",
+            encryption_key=settings.vault_encryption_key,
+        )
+        vault_data = vault_manager.vault.model_dump()
+        wf["vault_loaded"] = any(bool(v) for v in vault_data.values())
+        wf["vault_warning"] = None
+        if not wf["vault_loaded"]:
+            wf["vault_warning"] = (
+                "Vault is empty — value_ref fills will fail. Populate it via "
+                "POST /api/vault or data/vault/user_vault.json first."
+            )
+            logger.warning("Automation %s: %s", workflow_id, wf["vault_warning"])
+
+        # Audit Z6 guard: refuse real-PII-through-anonymous-model combos
+        # before launching anything.
+        guard_reason = _vault_model_guard(
+            bool(wf["vault_loaded"]),
+            settings.openrouter_model if llm else None,
+            allow_override=settings.allow_anonymous_model_with_vault,
+        )
+        if guard_reason:
+            wf["status"] = "failed"
+            wf["error"] = guard_reason
+            logger.error("Automation %s: %s", workflow_id, guard_reason)
+            return
+
+        manager = BrowserManager(settings)
 
         await manager.start()
 
@@ -320,28 +418,6 @@ async def _run_automation(workflow_id: str, url: str, task: str) -> None:
         except Exception:
             pass
 
-        # Try to create LLM gateway for intelligent planning
-        if settings.openrouter_api_key:
-            try:
-                from app.llm.openrouter import OpenRouterGateway
-                llm = OpenRouterGateway(settings)
-            except Exception as e:
-                logger.warning("Could not create LLM gateway: %s", e)
-
-        # Audit C2 fix: load the persisted vault + documents so value_ref
-        # actions resolve against real data instead of an empty UserVault.
-        vault_manager = VaultManager(
-            settings.data_dir / "vault",
-            encryption_key=settings.vault_encryption_key,
-        )
-        vault_data = vault_manager.vault.model_dump()
-        wf["vault_loaded"] = any(bool(v) for v in vault_data.values())
-        if not wf["vault_loaded"]:
-            logger.warning(
-                "Automation %s: vault is empty — value_ref fills will fail. "
-                "Populate data/vault/user_vault.json first.", workflow_id,
-            )
-
         # Create and run agent
         from app.policy.document_policy import DocumentPolicy
         document_policy = DocumentPolicy(
@@ -353,6 +429,10 @@ async def _run_automation(workflow_id: str, url: str, task: str) -> None:
             vault=vault_manager.vault,
             document_registry=vault_manager.registry,
             document_policy=document_policy,
+            llm_disabled_reason=llm_disabled_reason,
+            vault_loaded=bool(wf["vault_loaded"]),
+            vault_warning=wf.get("vault_warning"),
+            vision_fallback_enabled=settings.vision_fallback_enabled,
         )
 
         wf["status"] = "running"
@@ -430,10 +510,11 @@ async def _run_automation(workflow_id: str, url: str, task: str) -> None:
                 await llm.close()
             except Exception:
                 pass
-        try:
-            await manager.stop()
-        except Exception:
-            pass
+        if manager is not None:
+            try:
+                await manager.stop()
+            except Exception:
+                pass
         wf.pop("confirm_event", None)
         wf.pop("approved", None)
         wf.pop("abort_requested", None)
@@ -456,6 +537,14 @@ def _sync_workflow_to_wf(wf: dict[str, Any], ws) -> None:
     wf["total_actions"] = ws.total_actions
     wf["successful_actions"] = ws.successful_actions
     wf["failed_actions"] = ws.failed_actions
+    # Planning-mode visibility (P0-37): keep the early values written at
+    # launch consistent with the workflow's own record.
+    wf["planning_mode"] = ws.planning_mode
+    wf["llm_model"] = ws.llm_model
+    wf["llm_disabled_reason"] = ws.llm_disabled_reason
+    # Vault visibility (Z3)
+    wf["vault_loaded"] = ws.vault_loaded
+    wf["vault_warning"] = ws.vault_warning
     if ws.pending_action:
         wf["pending_action"] = {
             "action": ws.pending_action.get("action"),
@@ -492,6 +581,10 @@ async def get_automation_status(workflow_id: str) -> dict:
         "checkpoints": wf["checkpoints"],
         "pending_action": wf.get("pending_action"),
         "vault_loaded": wf.get("vault_loaded"),
+        "vault_warning": wf.get("vault_warning"),
+        "planning_mode": wf.get("planning_mode"),
+        "llm_model": wf.get("llm_model"),
+        "llm_disabled_reason": wf.get("llm_disabled_reason"),
         "error": wf["error"],
         "total_actions": wf.get("total_actions", 0),
         "successful_actions": wf.get("successful_actions", 0),

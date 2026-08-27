@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from app.agent.planner import plan_deterministic
+from app.agent.planning_result import ActionPlanned, NoValidAction
 from app.agent.field_mapper_models import (
     FieldBinding, MappingConfidence, MappingResult, MappingStrategy,
 )
@@ -64,9 +65,9 @@ class TestDeterministicSelect:
             MappingResult(bindings=[_binding("e1", "USER.gender", "combobox")]),
             value_resolver=_FakeResolver({"USER.gender": "Male"}),
         )
-        assert action is not None
-        assert action.action == "select"
-        assert action.option == "Male"
+        assert isinstance(action, ActionPlanned)
+        assert action.action.action == "select"
+        assert action.action.option == "Male"
 
     def test_select_skips_when_desired_already_selected(self):
         elements = [_el("e1", role="combobox", accessible_name="Gender",
@@ -77,7 +78,7 @@ class TestDeterministicSelect:
             MappingResult(bindings=[_binding("e1", "USER.gender", "combobox")]),
             value_resolver=_FakeResolver({"USER.gender": "Male"}),
         )
-        assert action is None  # nothing left to do (no submit button either)
+        assert isinstance(action, NoValidAction)  # nothing left to do (no submit button either)
 
     def test_select_skips_unresolvable_binding(self):
         elements = [_el("e1", role="combobox", accessible_name="Gender")]
@@ -87,7 +88,7 @@ class TestDeterministicSelect:
             MappingResult(bindings=[_binding("e1", "USER.gender", "combobox")]),
             value_resolver=_FakeResolver({}),  # empty vault
         )
-        assert action is None
+        assert isinstance(action, NoValidAction)  # unresolvable → skipped, not emitted empty
 
 
 class TestDeterministicCheckbox:
@@ -99,7 +100,7 @@ class TestDeterministicCheckbox:
             MappingResult(bindings=[_binding("e1", "USER.declaration", "checkbox")]),
             value_resolver=_FakeResolver({}),
         )
-        assert action is not None and action.action == "check"
+        assert isinstance(action, ActionPlanned) and action.action.action == "check"
 
     def test_skips_checked_checkbox(self):
         elements = [_el("e1", role="checkbox", accessible_name="Declaration", checked=True)]
@@ -109,7 +110,7 @@ class TestDeterministicCheckbox:
             MappingResult(bindings=[_binding("e1", "USER.declaration", "checkbox")]),
             value_resolver=_FakeResolver({}),
         )
-        assert action is None
+        assert isinstance(action, NoValidAction)
 
 
 class TestDeterministicFill:
@@ -121,7 +122,7 @@ class TestDeterministicFill:
             MappingResult(bindings=[_binding("e1", "USER.full_name", "textbox")]),
             value_resolver=_FakeResolver({"USER.full_name": "Rajesh Kumar Singh"}),
         )
-        assert action is None
+        assert isinstance(action, NoValidAction)
 
     def test_fill_emitted_when_value_differs(self):
         elements = [_el("e1", accessible_name="Full Name", value="")]
@@ -131,6 +132,6 @@ class TestDeterministicFill:
             MappingResult(bindings=[_binding("e1", "USER.full_name", "textbox")]),
             value_resolver=_FakeResolver({"USER.full_name": "Rajesh Kumar Singh"}),
         )
-        assert action is not None
-        assert action.action == "fill"
-        assert action.value_ref == "USER.full_name"
+        assert isinstance(action, ActionPlanned)
+        assert action.action.action == "fill"
+        assert action.action.value_ref == "USER.full_name"

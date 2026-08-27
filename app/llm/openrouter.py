@@ -62,6 +62,11 @@ class OpenRouterGateway(LLMGateway):
         self._client: httpx.AsyncClient | None = None
 
     @property
+    def model_name(self) -> str:
+        """Resolved primary model string (P0-37 planning-mode visibility)."""
+        return self._settings.openrouter_model
+
+    @property
     def _headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self._settings.openrouter_api_key}",

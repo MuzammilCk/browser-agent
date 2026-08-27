@@ -91,8 +91,9 @@ class PageObserver:
             title=nav_raw.get("title", ""),
         )
 
-        # Improved auth detection with confidence scoring (#7)
-        auth = self._detect_auth_challenge(elements, alerts, validation_errors)
+        # Improved auth detection with confidence scoring (#7, P0-18):
+        # frame metadata participates so reCAPTCHA iframes are detected.
+        auth = self._detect_auth_challenge(elements, alerts, validation_errors, frames)
 
         # Improved page type classification (#6)
         page_type = self._classify_page_type(
@@ -181,59 +182,105 @@ class PageObserver:
             visible=raw.get("visible", True),
         )
 
+    # Keywords that indicate an OTP challenge. "captcha" is deliberately
+    # NOT here — it belongs to the CAPTCHA branch (audit Z1 category
+    # confusion made a help link mentioning CAPTCHA read as live OTP).
+    _OTP_KEYWORDS = ("otp", "one-time", "one time password",
+                     "verification code", "enter code")
+    _CAPTCHA_KEYWORDS = ("captcha", "recaptcha", "security check",
+                         "prove you", "prove you're human", "robot")
+    # Roles that can actually receive typed OTP/CAPTCHA input. A link or
+    # button whose NAME mentions OTP is not an input field (audit Z1).
+    _EDITABLE_INPUT_ROLES = frozenset({"textbox", "searchbox", "spinbutton"})
+
+    @staticmethod
+    def _element_text(el: ElementState) -> str:
+        return (
+            (el.accessible_name or "") + " " + (el.label_text or "") + " "
+            + (el.placeholder or "")
+        ).lower()
+
+    def _is_otp_input(self, el: ElementState) -> bool:
+        """A real OTP input: editable, enabled, visible, OTP-named."""
+        return (
+            el.visible
+            and not el.disabled
+            and el.role in self._EDITABLE_INPUT_ROLES
+            and any(kw in self._element_text(el) for kw in self._OTP_KEYWORDS)
+        )
+
+    def _is_captcha_widget(self, el: ElementState) -> bool:
+        """Structural CAPTCHA widget: an editable entry box or a challenge
+        image (role=img) — NOT a mere text mention on links/buttons."""
+        if not el.visible or el.disabled:
+            return False
+        if el.role not in self._EDITABLE_INPUT_ROLES | {"img"}:
+            return False
+        return any(kw in self._element_text(el) for kw in self._CAPTCHA_KEYWORDS)
+
     def _detect_auth_challenge(
         self,
         elements: list[ElementState],
         alerts: list[AlertState],
         validations: list[ValidationErrorState],
+        frames: list[FrameState] | None = None,
     ) -> AuthenticationState:
-        """Multi-signal auth detection with confidence scoring (#7).
+        """Multi-signal auth detection with confidence scoring (#7, P0-18).
 
-        Uses:
-        - Field types (password input, OTP input)
-        - Accessible roles and names
-        - Page structure (few fields + submit = likely login)
-        - Alert/dialog text
-        - URL/path hints (not available here, but could be added)
+        A detection means "a challenge is actively blocking progress right
+        now" and always requires STRUCTURAL co-occurrence, never a bare
+        keyword mention anywhere on the page:
+
+        - login: classic small login form shape (few fields + button)
+        - otp: an editable, enabled input named like an OTP box
+        - captcha: an editable/image CAPTCHA widget, an active dialog
+          instructing to complete one, or a reCAPTCHA iframe on the page
+
+        A password field inside a large registration form, a help link
+        explaining CAPTCHAs, or a "Resend OTP" button alone do NOT halt.
         """
-        # Collect signals
         has_password_field = False
-        has_otp_field = False
-        has_captcha = False
+        otp_inputs: list[ElementState] = []
+        captcha_widgets: list[ElementState] = []
         field_count = 0
         button_count = 0
-        signals = []
+        signals: list[str] = []
 
         for el in elements:
             if not el.visible:
                 continue
 
-            # Password field
             if el.input_type == "password":
                 has_password_field = True
                 field_count += 1
                 signals.append("password_field")
 
-            # OTP-related field
-            name_lower = (el.accessible_name or "").lower()
-            label_lower = (el.label_text or "").lower()
-            placeholder_lower = (el.placeholder or "").lower()
-
-            if any(kw in name_lower + label_lower + placeholder_lower
-                   for kw in ["otp", "one-time", "verification code", "enter code", "captcha"]):
-                has_otp_field = True
+            if self._is_otp_input(el):
+                otp_inputs.append(el)
                 field_count += 1
                 signals.append(f"otp_field: {el.accessible_name}")
+            elif self._is_captcha_widget(el):
+                captcha_widgets.append(el)
+                signals.append(f"captcha_widget: {el.accessible_name}")
 
             if el.role in ("textbox", "combobox", "listbox", "checkbox", "radio", "searchbox"):
                 field_count += 1
             if el.role == "button":
                 button_count += 1
 
-        # Alert-based signals
+        # Alert/dialog-based signals: an active dialog telling the user to
+        # complete a CAPTCHA IS a blocking challenge.
         alert_text = " ".join((a.text or "").lower() for a in alerts)
-        if any(kw in alert_text for kw in ["session expired", "please log in", "authentication"]):
-            signals.append("session_alert")
+        if alert_text and any(kw in alert_text for kw in self._CAPTCHA_KEYWORDS):
+            signals.append("captcha_dialog")
+
+        # reCAPTCHA-style challenge frames are structurally present.
+        frame_text = " ".join(
+            f"{f.url or ''} {f.title or ''} {f.name or ''}".lower()
+            for f in (frames or [])
+        )
+        if frame_text and "recaptcha" in frame_text:
+            signals.append("recaptcha_iframe")
 
         # Confidence scoring
         if has_password_field and field_count <= 6 and button_count >= 1:
@@ -246,7 +293,7 @@ class PageObserver:
                 confidence=confidence,
             )
 
-        if has_otp_field:
+        if otp_inputs:
             confidence = 0.9 if field_count <= 4 else 0.6
             return AuthenticationState(
                 detected=True,
@@ -255,16 +302,11 @@ class PageObserver:
                 confidence=confidence,
             )
 
-        # Check for CAPTCHA patterns in page text
-        combined_text = alert_text + " ".join(
-            (el.accessible_name or "").lower() + " " + (el.description or "").lower()
-            for el in elements
-        )
-        if any(kw in combined_text for kw in ["captcha", "security check", "prove you", "robot", "recaptcha"]):
+        if captcha_widgets or "captcha_dialog" in signals or "recaptcha_iframe" in signals:
             return AuthenticationState(
                 detected=True,
                 challenge_type="captcha",
-                reason="CAPTCHA challenge detected",
+                reason=f"CAPTCHA challenge detected: {', '.join(signals)}",
                 confidence=0.8,
             )
 

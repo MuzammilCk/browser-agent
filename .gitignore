@@ -27,6 +27,11 @@ ENV/
 data/*.db
 data/*.sqlite
 
+# Vault: real user data must NEVER be committed (the example template is kept)
+data/vault/*
+!data/vault/user_vault.example.json
+!data/vault/README.md
+
 # Playwright
 playwright-report/
 test-results/

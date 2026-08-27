@@ -22,9 +22,16 @@ from typing import Any
 
 from app.agent.field_mapper import FieldMapper
 from app.agent.planner import plan_deterministic, plan_with_llm
+from app.agent.planning_result import (
+    ActionPlanned, NoValidAction, PlanLLMError, PlanOutcome, TaskComplete,
+)
 from app.agent.registry import ReferenceRegistry, get_registry
+from app.agent.vision_fallback import (
+    request_vision_action, should_attempt_vision,
+)
 from app.browser.executor import ActionResult, BrowserExecutor
 from app.browser.observer import PageObservation, PageObserver
+from app.browser.vision import assess_completeness
 from app.llm.base import LLMGateway
 from app.models.actions import BrowserAction
 from app.models.workflow_state import (
@@ -63,8 +70,22 @@ class AgentRunner:
         vault: UserVault | None = None,
         document_registry: DocumentRegistry | None = None,
         document_policy: Any | None = None,
+        llm_disabled_reason: str | None = None,
+        vault_loaded: bool = False,
+        vault_warning: str | None = None,
+        vision_fallback_enabled: bool = False,
     ) -> None:
         self._llm = llm
+        # Why the LLM is absent (P0-37): callers who know better than the
+        # default pass an explicit reason, e.g. "gateway_init_failed: ...".
+        self._llm_disabled_reason = (
+            llm_disabled_reason if llm is None else None
+        )
+        # Vault visibility (Z3): declared on workflow state from the start.
+        self._vault_loaded = vault_loaded
+        self._vault_warning = vault_warning
+        # Vision fallback (Z7 / P0-16): one-shot rescue at planning stalls.
+        self._vision_fallback_enabled = vision_fallback_enabled
         self._policy = policy_engine or PolicyEngine()
         self._registry = registry or get_registry()
         self._observer = PageObserver()
@@ -92,8 +113,28 @@ class AgentRunner:
             status=WorkflowStatus.RUNNING,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
+        self._apply_planning_metadata(workflow)
+        workflow.vault_loaded = self._vault_loaded
+        workflow.vault_warning = self._vault_warning
         logger.info("Starting workflow %s: %s", workflow.workflow_id, task)
         return await self._loop(workflow, page)
+
+    def _apply_planning_metadata(self, workflow: WorkflowState) -> None:
+        """Declare whether the LLM is actually in the loop (P0-37 / Z8).
+
+        Set from the very first moment of the workflow so "is the LLM even
+        running" is answerable from workflow state alone.
+        """
+        if self._llm is not None:
+            workflow.planning_mode = "llm"
+            workflow.llm_model = getattr(self._llm, "model_name", None)
+            workflow.llm_disabled_reason = None
+        else:
+            workflow.planning_mode = "deterministic_fallback"
+            workflow.llm_model = None
+            workflow.llm_disabled_reason = (
+                self._llm_disabled_reason or "no_api_key"
+            )
 
     async def _loop(self, workflow: WorkflowState, page: Any) -> WorkflowState:
         """Run observe→map→plan→policy→execute iterations until a halt.
@@ -144,10 +185,22 @@ class AgentRunner:
         workflow.unmapped_fields = mapping.unmapped_fields
         workflow.ambiguous_fields = mapping.ambiguous_fields
 
-        # 4. PLAN
-        action = await self._plan(workflow, observation, mapping)
-        if action is None:
-            self._handle_no_action(workflow, mapping)
+        # 4. PLAN — typed outcome; None no longer overloaded (P0-13)
+        outcome = await self._plan(workflow, observation, mapping)
+        if isinstance(outcome, ActionPlanned):
+            action = outcome.action
+        elif isinstance(outcome, NoValidAction) and self._vision_gate_open(workflow):
+            # Z7 / P0-16: one vision pass before surfacing the stall.
+            vision_outcome = await self._attempt_vision_fallback(
+                workflow, observation, page,
+            )
+            if isinstance(vision_outcome, ActionPlanned):
+                action = vision_outcome.action
+            else:
+                self._handle_plan_outcome(workflow, vision_outcome, mapping)
+                return "break"
+        else:
+            self._handle_plan_outcome(workflow, outcome, mapping)
             return "break"
 
         # 5. POLICY CHECK — audit B2 fix: REQUIRE_CONFIRMATION now halts
@@ -197,7 +250,7 @@ class AgentRunner:
 
     async def _plan(
         self, workflow: WorkflowState, obs: PageObservation, mapping,
-    ) -> BrowserAction | None:
+    ) -> PlanOutcome:
         if self._llm:
             return await plan_with_llm(self._llm, workflow, obs, mapping)
         # Deterministic planning resolves bindings through the vault so
@@ -207,21 +260,94 @@ class AgentRunner:
             value_resolver=self._executor.value_resolver,
         )
 
-    def _handle_no_action(self, workflow: WorkflowState, mapping) -> None:
-        # Distinguish "form complete" from "planner could not act".
-        # plan_with_llm records an error on the workflow when the LLM call
-        # itself failed — that must not be reported as submission-ready.
-        if workflow.error_state == "recoverable" and workflow.error_message:
+    def _vision_gate_open(self, workflow: WorkflowState) -> bool:
+        """Vision fallback runs at most once per workflow (Z7 / P0-16)."""
+        return should_attempt_vision(
+            enabled=self._vision_fallback_enabled,
+            has_llm=self._llm is not None,
+            attempts_used=workflow.vision_fallback_attempts,
+        )
+
+    async def _attempt_vision_fallback(
+        self, workflow: WorkflowState, observation: PageObservation, page: Any,
+    ) -> PlanOutcome:
+        """Take the single vision-fallback attempt; trace it in checkpoints."""
+        workflow.vision_fallback_attempts += 1
+        assessment = assess_completeness(observation)
+        workflow.add_checkpoint(
+            f"Vision fallback attempted ({assessment.reason})"
+        )
+        logger.info(
+            "Workflow %s: vision fallback attempt %d (%s)",
+            workflow.workflow_id, workflow.vision_fallback_attempts,
+            assessment.reason,
+        )
+        return await request_vision_action(
+            self._llm, page, observation, workflow.task_description,
+        )
+
+    def _handle_plan_outcome(
+        self, workflow: WorkflowState, outcome: PlanOutcome, mapping,
+    ) -> None:
+        """Translate a non-action plan outcome into honest workflow status.
+
+        Dispatch rules (Phase 1 / Z2):
+        - PlanLLMError → WAITING_FOR_USER with the error surfaced verbatim.
+        - NoValidAction on navigation/unknown pages → WAITING_FOR_USER
+          ("stalled"), never READY_FOR_SUBMISSION — a page without fields
+          trivially has zero unmapped fields, which said nothing about
+          completion.
+        - NoValidAction on form/review with nothing unmapped/ambiguous →
+          the one legitimate path to READY_FOR_SUBMISSION.
+        - TaskComplete → COMPLETED only via the existing success-page guard.
+        """
+        if isinstance(outcome, PlanLLMError):
+            logger.warning("Planning failed: %s", outcome.message)
+            workflow.set_error("user_required", f"LLM planning failed: {outcome.message}")
             workflow.status = WorkflowStatus.WAITING_FOR_USER
-            workflow.set_error("none", "")
             return
-        if not mapping.unmapped_fields and not mapping.ambiguous_fields:
+
+        reason = (
+            outcome.reason if isinstance(outcome, (NoValidAction, TaskComplete))
+            else "planner produced no action"
+        )
+        workflow.add_checkpoint(f"Planner stopped: {reason}")
+        logger.info("Planner stopped: %s", reason)
+
+        page_type = workflow.current_page_type
+
+        if isinstance(outcome, TaskComplete) and page_type == "success":
+            workflow.status = WorkflowStatus.COMPLETED
+            if workflow.submission_state in ("ready", "not_ready"):
+                workflow.submission_state = "submitted"
+            return
+
+        stalled_page_types = {"navigation", "unknown", "otp", "captcha"}
+        if page_type in stalled_page_types:
+            workflow.status = WorkflowStatus.WAITING_FOR_USER
+            workflow.set_error(
+                "user_required",
+                f"Stalled on '{page_type}' page — planner found no next "
+                f"step ({reason}). Manual attention needed.",
+            )
+            return
+
+        if (
+            page_type in ("form", "review")
+            and not mapping.unmapped_fields
+            and not mapping.ambiguous_fields
+        ):
             workflow.status = WorkflowStatus.READY_FOR_SUBMISSION
             if workflow.submission_state == "not_ready":
                 workflow.submission_state = "ready"
-        else:
-            workflow.status = WorkflowStatus.WAITING_FOR_USER
-            workflow.set_error("user_required", f"Cannot map {len(mapping.unmapped_fields)} fields")
+            return
+
+        # Anything else (unmapped fields, odd page types) → loud halt.
+        workflow.status = WorkflowStatus.WAITING_FOR_USER
+        workflow.set_error(
+            "user_required",
+            f"Cannot map {len(mapping.unmapped_fields)} fields",
+        )
 
     def _check_policy(
         self,
