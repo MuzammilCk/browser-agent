@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -26,11 +27,15 @@ from app.agent.planning_result import (
     ActionPlanned, NoValidAction, PlanLLMError, PlanOutcome, TaskComplete,
 )
 from app.agent.registry import ReferenceRegistry, get_registry
+from app.agent.stall_detector import (
+    build_signature, evaluate_repeat, STALL_REASON_REPEATED_ACTION,
+)
 from app.agent.vision_fallback import (
     request_vision_action, should_attempt_vision,
 )
 from app.browser.executor import ActionResult, BrowserExecutor
 from app.browser.observer import PageObservation, PageObserver
+from app.browser.tabs import resolve_active_page, switch_from_result
 from app.browser.vision import assess_completeness
 from app.llm.base import LLMGateway
 from app.models.actions import BrowserAction
@@ -48,6 +53,18 @@ _TERMINAL_STATUSES = {
     WorkflowStatus.ABORTED,
     WorkflowStatus.COMPLETED,
 }
+
+
+@dataclass(frozen=True)
+class _IterationOutcome:
+    """What one iteration produced, and which tab the next one must use.
+
+    Phase 8: the active page is explicit, returned state — not an implicit
+    property of whichever Page object happened to be passed in at start.
+    """
+
+    next_step: PageObservation | str
+    page: Any
 
 
 class AgentRunner:
@@ -141,18 +158,22 @@ class AgentRunner:
 
         Shared by run() and resume() so a resumed workflow continues
         in the same WorkflowState instead of starting over.
+
+        `page` is re-bound from each iteration's outcome so a workflow that
+        followed a click into a new tab keeps working in that tab (Phase 8).
         """
         try:
             observation = None
             for iteration in range(1, self._max_iterations + 1):
                 logger.info("=== Iteration %d ===", iteration)
-                result = await self._run_iteration(workflow, observation, page)
-                if result == "break":
+                outcome = await self._run_iteration(workflow, observation, page)
+                page = outcome.page
+                if outcome.next_step == "break":
                     break
-                if result == "continue":
+                if outcome.next_step == "continue":
                     observation = None
                     continue
-                observation = result
+                observation = outcome.next_step
             else:
                 workflow.status = WorkflowStatus.FAILED
                 workflow.set_error("fatal", f"Max iterations ({self._max_iterations}) reached")
@@ -170,15 +191,18 @@ class AgentRunner:
         workflow: WorkflowState,
         prev_observation: PageObservation | None,
         page: Any,
-    ) -> PageObservation | str:
-        """Run one iteration. Returns next observation, 'break', or 'continue'."""
+    ) -> _IterationOutcome:
+        """Run one iteration. Returns the next step plus the active page."""
+        # 0. ACTIVE TAB — never observe a page the browser already closed.
+        page = self._resolve_active_page(workflow, page)
+
         # 1. OBSERVE
         observation = await self._observer.observe(page)
         self._update_workflow_observation(workflow, observation)
 
         # 2. CHECK AUTH
         if self._check_auth(workflow, observation):
-            return "break"
+            return _IterationOutcome("break", page)
 
         # 3. MAP FIELDS
         mapping = await self._mapper.map_fields(observation)
@@ -198,24 +222,95 @@ class AgentRunner:
                 action = vision_outcome.action
             else:
                 self._handle_plan_outcome(workflow, vision_outcome, mapping)
-                return "break"
+                return _IterationOutcome("break", page)
         else:
             self._handle_plan_outcome(workflow, outcome, mapping)
-            return "break"
+            return _IterationOutcome("break", page)
+
+        # 4b. STALL CHECK (Phase 9) — refuse to repeat an identical action
+        # against an unchanged page for a fourth time.
+        if self._check_repeated_action(workflow, observation, action):
+            return _IterationOutcome("break", page)
 
         # 5. POLICY CHECK — audit B2 fix: REQUIRE_CONFIRMATION now halts
         policy_result = self._policy.evaluate(action, observation.page_state)
         if self._check_policy(workflow, policy_result, action, observation):
-            return "break"
+            return _IterationOutcome("break", page)
 
         # 6. EXECUTE
         result = await self._executor.execute(page, action, observation)
+
+        # 6b. FOLLOW A TAB SWITCH the action caused (Phase 8), and trace it.
+        page = self._follow_tab_switch(workflow, page, result)
 
         # 7. RECORD
         self._record_action(workflow, action, result, policy_result, observation)
 
         # 8. HANDLE RESULT
-        return self._handle_result(workflow, result, observation)
+        return _IterationOutcome(
+            self._handle_result(workflow, result, observation), page,
+        )
+
+    def _resolve_active_page(self, workflow: WorkflowState, page: Any) -> Any:
+        """Heal the tracked page before observing it (Phase 8).
+
+        Conservative on purpose: only a dead page is replaced here. Extra
+        tabs that appeared without an action of ours are reported to the
+        model through PageState.tabs so it decides whether they matter.
+        """
+        sync = resolve_active_page(page)
+        if sync.switch is not None and sync.active_page is not page:
+            workflow.record_tab_switch(sync.switch.describe())
+            logger.warning(
+                "Workflow %s: %s", workflow.workflow_id, sync.switch.describe(),
+            )
+            return sync.active_page
+        return page
+
+    def _follow_tab_switch(
+        self, workflow: WorkflowState, page: Any, result: ActionResult,
+    ) -> Any:
+        """Adopt the tab an action opened and write the switch into the trace."""
+        sync = switch_from_result(page, result)
+        if sync.switch is None:
+            return page
+        workflow.record_tab_switch(sync.switch.describe())
+        logger.info("Workflow %s: %s", workflow.workflow_id, sync.switch.describe())
+        return sync.active_page
+
+    def _check_repeated_action(
+        self, workflow: WorkflowState, observation: PageObservation,
+        action: BrowserAction,
+    ) -> bool:
+        """Phase 9: halt loudly when the same action changes nothing.
+
+        Returns True to halt the iteration. The status is a labeled
+        WAITING_FOR_USER stall, not a generic max-iteration failure, so the
+        log says what actually happened.
+        """
+        signature = build_signature(observation, action)
+        verdict = evaluate_repeat(
+            signature,
+            workflow.last_action_signature,
+            workflow.repeated_action_count,
+        )
+        workflow.last_action_signature = verdict.key
+        workflow.repeated_action_count = verdict.repeat_count
+
+        if not verdict.halt:
+            return False
+
+        workflow.stall_reason = STALL_REASON_REPEATED_ACTION
+        workflow.status = WorkflowStatus.WAITING_FOR_USER
+        workflow.set_error("user_required", verdict.reason)
+        workflow.add_checkpoint(
+            f"Stalled ({STALL_REASON_REPEATED_ACTION}): {signature.describe()}"
+        )
+        logger.warning(
+            "Workflow %s stalled — %s: %s",
+            workflow.workflow_id, STALL_REASON_REPEATED_ACTION, verdict.reason,
+        )
+        return True
 
     def _update_workflow_observation(
         self, workflow: WorkflowState, obs: PageObservation,
@@ -223,6 +318,7 @@ class AgentRunner:
         workflow.current_observation_id = obs.observation_id
         workflow.current_url = obs.page_state.url
         workflow.current_page_type = obs.page_state.page_type
+        workflow.open_tab_count = obs.page_state.tabs.total
 
         # A success/acknowledgement page means the application flow completed.
         if obs.page_state.page_type == "success" and workflow.actions_taken:
@@ -434,7 +530,9 @@ class AgentRunner:
             workflow.add_checkpoint("User declined confirmation")
             return workflow
 
-        # Re-observe before replaying (never trust a paused snapshot)
+        # Re-observe before replaying (never trust a paused snapshot).
+        # Phase 8: the tab may have changed while the user was deciding.
+        page = self._resolve_active_page(workflow, page)
         observation = await self._observer.observe(page)
         self._update_workflow_observation(workflow, observation)
 
@@ -505,6 +603,8 @@ class AgentRunner:
         result = await self._executor.execute(
             page, action, observation, user_confirmed=True,
         )
+        # Phase 8: a confirmed click can open a tab too — follow it.
+        page = self._follow_tab_switch(workflow, page, result)
         self._record_action(workflow, action, result, policy_result, observation)
         workflow.status = WorkflowStatus.RUNNING
         workflow.submission_state = "confirmed"

@@ -114,6 +114,34 @@ class WorkflowState(BaseModel):
         description="Current page type classification",
     )
 
+    # Multi-tab awareness (audit Phase 8): which tab the agent is on is
+    # explicit state, and every switch is part of the workflow trace
+    # instead of being handled silently inside the browser layer.
+    open_tab_count: int = Field(
+        default=1,
+        description="Number of browser tabs open at the last observation",
+    )
+    tab_switches: list[str] = Field(
+        default_factory=list,
+        description="Human-readable trace of active-tab switches, in order",
+    )
+
+    # Stall detection (audit Phase 9): a loop repeating one identical
+    # action against an unchanged page gets its own labeled stop instead
+    # of a generic max-iteration failure.
+    last_action_signature: str = Field(
+        default="",
+        description="Signature key of the most recently planned action",
+    )
+    repeated_action_count: int = Field(
+        default=0,
+        description="Consecutive times the current signature has been planned",
+    )
+    stall_reason: str | None = Field(
+        default=None,
+        description="Labeled stall cause, e.g. 'repeated_action_no_progress'",
+    )
+
     # Confirmation gate (audit B2)
     pending_action: dict | None = Field(
         default=None,
@@ -224,6 +252,11 @@ class WorkflowState(BaseModel):
         """Add a user checkpoint."""
         if checkpoint not in self.checkpoints:
             self.checkpoints.append(checkpoint)
+
+    def record_tab_switch(self, description: str) -> None:
+        """Record an active-tab switch in the workflow trace (Phase 8)."""
+        self.tab_switches.append(description)
+        self.add_checkpoint(description)
 
     def set_error(self, error_type: str, message: str = "") -> None:
         """Set error state."""

@@ -248,3 +248,22 @@ fixture expansion, trace export endpoint, startup config checks) remain open; Ca
 Registry / tiered Model Router remains a separate future initiative.
 
 Test-count trail per phase: 374 → 393 → 403 → 415 → 422 → 434 → 441 (all `--ignore=tests/real_sites`).
+
+---
+
+## Remediation log (Phase 8 + Phase 9 — multi-tab awareness & repeated-action stall detector)
+
+New audit (tab duplication + "what a reference build would do differently") identified a code-level gap that defeats any model: nothing in the stack knew a second browser tab existed, so a `target="_blank"` click landed in a tab nobody observed and every retry duplicated it. Implemented per `implementation-plan.md` Phases 8–9, under the repo's Section 1 protocol.
+
+Baseline before this round: **441 passed / 0 failed**. After: **494 passed / 0 failed** (+53 new:
+`tests/unit/test_tabs.py`, `tests/unit/test_stall_detector.py`, `tests/integration/test_multi_tab.py`
+plus `tests/synthetic_forms/pages/portal_landing.html` + `portal_subportal.html`).
+
+| Finding | Fix | Files |
+|---|---|---|
+| Phase 8 — tab duplication (a click into `target="_blank"`/`window.open` was invisible) | `BrowserManager.start()` registers `context.on("page", ...)` via a new `TabTracker` so every tab is known from the moment it opens (newest tab wins); after click-type actions the executor reconciles tab state in `_sync_tabs` and adopts the newest tab as the active page for all later observation/action; the switch is explicit on `ActionResult.tab_switch`/`active_page` and written into the workflow trace via `record_tab_switch` + a checkpoint (`opened a new tab: <url> — switching context to it`); the orphaned old tab is closed so one click never leaves a pile; `PageObserver` populates `PageState.tabs` so a second tab is reported to the planner, not guessed at | `app/browser/tabs.py` (new), `app/browser/manager.py`, `app/browser/executor.py`, `app/models/page_state.py`, `app/agent/runner.py`, `tests/integration/test_multi_tab.py`, `tests/synthetic_forms/pages/portal_landing.html`, `tests/synthetic_forms/pages/portal_subportal.html`, `tests/unit/test_tabs.py` |
+| Phase 9 — repeated-identical-action stall | New `stall_detector` builds `ActionSignature = (action_type, target_ref, page_type, url)` + structural `page_fingerprint`; `evaluate_repeat` halts after 3 identical no-progress repeats with greppable reason `repeated_action_no_progress`; `runner._check_repeated_action` sets `WAITING_FOR_USER` + a named checkpoint — a labeled stall, not a generic max-iteration failure; any real page change resets the counter | `app/agent/stall_detector.py` (new), `app/agent/runner.py`, `app/models/workflow_state.py`, `tests/unit/test_stall_detector.py` |
+| Smaller item — document `browser_mode` overrides `HEADLESS` | One-line note added to `.env.example` next to `HEADLESS` (and a note on pinning a named, established `OPENROUTER_MODEL` rather than a `:free` model before the vault has real data) | `.env.example` |
+| Smaller item — pin `OPENROUTER_MODEL` | `.env.example` already pins `anthropic/claude-sonnet-4-20250514` (a named provider); comment added clarifying the guardrail interaction. (The gitignored runtime `.env` is the operator's responsibility — the example no longer ships the anonymous default.) | `.env.example` |
+
+Not done here (out of scope of this branch): the §5 "evals from real frozen snapshots" recommendation — every fixture is still synthetic. A library of real, captured, replayed-offline portal snapshots (UIDAI, PM-KISAN, a scholarship portal) would have caught this class of bug earlier and remains the highest-leverage follow-up.

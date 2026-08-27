@@ -196,6 +196,46 @@ Lighter-weight than Phases 1–6 — some of these are backlog items, not bugs, 
 
 ---
 
+## Phase 8 — Multi-tab awareness (closes the tab-duplication bug)
+**Closes:** the §3 audit failure (a `target="_blank"` / `window.open()` click opens a tab the whole stack was blind to, so every retry duplicates it). Builds on the tab lifecycle gap nobody had looked at in the prior two audits.
+
+### Root cause (verified by running, not just reading)
+`BrowserManager.start()` opened exactly one `Page` and threaded it through the whole workflow; nothing registered `context.on("page", ...)`, and `runner._loop` never re-checked `context.pages`. `executor._execute_click` clicked, swallowed `wait_for_load_state`, and returned `success=True` even when the click landed in a tab nobody observed — so the next iteration re-saw the unchanged frozen page and re-clicked the same link. One duplicate tab per retry (the 4-tab screenshot).
+
+### Scope
+- `BrowserManager.start()` registers `context.on("page", ...)` via a new `TabTracker`, so every tab is known from the moment it opens — newest tab wins, matching the rule the action path uses.
+- After any click-type (`click`/`press`/`check`/`uncheck`) action, the executor captures `pages_before` and reconciles in `_sync_tabs`: if a new tab appeared, the **newest** tab becomes the active page for every later observation/action, and the switch is written onto `ActionResult.tab_switch` / `active_page`.
+- The switch is made explicit in the workflow trace: `TabSwitch.describe()` reads `opened a new tab: <url> — switching context to it`, and `runner._follow_tab_switch` / `_resolve_active_page` record it via `workflow.record_tab_switch` + a checkpoint.
+- Orphan policy: the tab the click left behind is **closed** (`close_orphan_tabs=True`) so one click can never leave a pile of duplicate tabs; extra duplicate tabs from the same action are always closed. A tab closed by the site is handled by falling forward onto the newest live tab.
+- Multi-tab state is now part of what the model observes: `PageObserver` populates `PageState.tabs` (`TabsState`/`TabState`) from `build_tabs_state`, so a second tab is reported to the planner rather than guessed at.
+
+### Acceptance criteria
+- Permanent regression fixture (`tests/synthetic_forms/pages/portal_landing.html` with a `target="_blank"` link + a `window.open` link, and `portal_subportal.html`):
+  - a `target="_blank"` click makes the tracked `result.active_page.url` change to the sub-portal, and `len(context.pages) <= 2` for a single such click (`test_tracked_page_follows_new_tab`, `test_orphaned_tab_does_not_accumulate`);
+  - `window.open` behaves identically (`test_window_open_click_also_switches`);
+  - re-observing the active page after the switch no longer shows the stale link, so the planner cannot re-click it (`test_no_duplicate_tab_on_next_iteration`);
+  - a normal same-tab link reports no switch (`test_same_page_navigation_reports_no_switch`);
+  - a second tab is visible in the observation (`TestObservationReportsTabs`) and in `BrowserManager.page`/`tabs` (`TestManagerTabTracking`);
+  - the runner records the switch in the trace and follows it instead of re-observing the frozen page (`test_workflow_records_tab_switch_and_follows_it`).
+- All 441 prior tests still pass.
+
+---
+
+## Phase 9 — Repeated-identical-action stall detector
+**Closes:** the diagnostic gap where "the last N actions produced no change" looked identical to "ran out of iterations". A backstop for *whatever* future edge case repeats the same action, not only the tab bug.
+
+### Scope
+- New `app/agent/stall_detector.py` builds an `ActionSignature` = `(action_type, target_ref, page_type, url)` plus a structural `page_fingerprint` (refs, roles, names, values, checked/disabled/visible state, alert/validation counts, tab count) — cheap and structural, no screenshots/text.
+- `evaluate_repeat` counts consecutive identical `(signature)` tuples; after `REPEATED_ACTION_LIMIT = 3` identical no-progress actions it returns `halt=True` with a distinct, greppable reason `repeated_action_no_progress`.
+- `runner._check_repeated_action` calls this each iteration: on halt it sets `workflow.status = WAITING_FOR_USER`, `workflow.stall_reason = "repeated_action_no_progress"`, and adds a checkpoint naming the repeated action — a labeled stall, not a generic max-iteration failure.
+- A real page change (new element, changed value, new alert, new tab) resets the counter because the fingerprint differs — that is progress even if the next action looks the same.
+
+### Acceptance criteria
+- `tests/unit/test_stall_detector.py`: identical signature 4× in a row halts; a changed fingerprint resets the count and does not halt; `build_signature`/`page_fingerprint` are structural and deterministic.
+- The behavior is independent of Phases 1–7 and the typed-planning / vault work — no re-touch of verified code.
+
+---
+
 ## Appendix — mapping table
 
 | Finding | Your own plan's item | Phase | Status before this plan |

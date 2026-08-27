@@ -9,7 +9,9 @@ from typing import Any
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from playwright.async_api import Playwright
 
+from app.browser.tabs import TabTracker
 from app.config.settings import Settings, get_settings
+from app.models.page_state import TabsState
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,15 @@ class BrowserManager:
     Audit B5 fix: open() now validates against TrustedDomainRegistry
     before navigating, unless domain-trust checking is disabled.
 
+    Audit Phase 8: a TabTracker is registered on the context at start(),
+    so a tab opened by the site (target="_blank", window.open) is known
+    from the moment it opens rather than discovered by accident. `page`
+    returns the ACTIVE tab, which is the newest one — the same rule the
+    executor applies after an action, so the two never disagree.
+
+    Note: browser_mode='user' forces a headed window and therefore
+    overrides the HEADLESS setting.
+
     Usage:
         async with BrowserManager() as manager:
             page = await manager.open("https://uidai.gov.in")
@@ -37,14 +48,38 @@ class BrowserManager:
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
+        self._tabs: TabTracker | None = None
         self._domain_registry: Any = None  # lazy-loaded TrustedDomainRegistry
 
     @property
     def page(self) -> Page:
-        """Get the current page. Raises if browser not started."""
+        """Get the ACTIVE page (newest tab). Raises if browser not started."""
+        if self._page is None:
+            raise RuntimeError("Browser not started. Call start() first.")
+        if self._tabs is not None:
+            active = self._tabs.active_page
+            if active is not None:
+                return active
+        return self._page
+
+    @property
+    def initial_page(self) -> Page:
+        """The first page opened at start(), regardless of later tabs."""
         if self._page is None:
             raise RuntimeError("Browser not started. Call start() first.")
         return self._page
+
+    @property
+    def tabs(self) -> TabsState:
+        """Explicit snapshot of every open tab and which one is active."""
+        if self._tabs is None:
+            return TabsState()
+        return self._tabs.snapshot()
+
+    @property
+    def tab_tracker(self) -> TabTracker | None:
+        """The context's tab tracker (None before start())."""
+        return self._tabs
 
     @property
     def context(self) -> BrowserContext:
@@ -88,11 +123,16 @@ class BrowserManager:
     async def start(self) -> None:
         """Launch Playwright and open a Chromium browser.
 
-        browser_mode='user' → headed, resizable window (user controls size)
-        browser_mode='test' → headless, fixed 1280×720 viewport
+        browser_mode='user' → headed, resizable window (user controls size).
+            NOTE: this overrides HEADLESS — a headed window is the point.
+        browser_mode='test' → headless (per HEADLESS), fixed 1280×720 viewport
         """
         user_mode = self._settings.browser_mode == "user"
         headless = self._settings.headless if not user_mode else False
+        if user_mode and self._settings.headless:
+            logger.info(
+                "browser_mode='user' overrides HEADLESS=true — running headed.",
+            )
 
         logger.info("Starting Playwright (mode=%s)...", "user" if user_mode else "test")
         self._check_subprocess_support()
@@ -115,6 +155,9 @@ class BrowserManager:
 
         self._context = await self._browser.new_context(**ctx_kwargs)
         self._page = await self._context.new_page()
+        # Phase 8: track every tab from the moment it opens, so a
+        # target="_blank" click can never navigate a page nobody watches.
+        self._tabs = TabTracker(self._context, self._page)
         logger.info("Browser started successfully.")
 
     async def stop(self) -> None:
@@ -129,6 +172,7 @@ class BrowserManager:
         if self._playwright:
             await self._playwright.stop()
         self._page = None
+        self._tabs = None
         self._context = None
         self._browser = None
         self._playwright = None

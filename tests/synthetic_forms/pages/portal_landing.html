@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Portal Landing — Services</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 1rem; }
+        nav a { display: block; margin: 0.5rem 0; color: #1d4ed8; }
+    </style>
+</head>
+<body>
+    <h1>Resident Services Portal</h1>
+    <p>Choose a service. Some services open in a separate application.</p>
+
+    <nav>
+        <!-- The audit repro (§3): a legacy portal linking out to a separate
+             sub-application in a NEW TAB. The original page never navigates. -->
+        <a id="subportal" href="portal_subportal.html" target="_blank">Download Aadhaar</a>
+        <a id="popup" href="#" onclick="window.open('portal_subportal.html', '_blank'); return false;">Open Sub-Portal (window.open)</a>
+        <a id="local" href="portal_landing.html">Reload this page</a>
+    </nav>
+
+    <p>Helpline: 1947 (toll free)</p>
+</body>
+</html>

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from app.browser.locator import LocatorResolver
+from app.browser.tabs import TabSwitch, pages_for, safe_url, sync_active_page
 from app.browser.verification import ActionVerifier, VerificationResult, VerificationStatus
 from app.models.actions import BrowserAction
 from app.models.page_state import PageObservation, PageState
@@ -25,6 +26,10 @@ if TYPE_CHECKING:
     from playwright.async_api import Page
 
 logger = logging.getLogger(__name__)
+
+# Actions that can plausibly open a new tab/window: an anchor with
+# target="_blank", a window.open() handler, or Enter on such a control.
+_TAB_OPENING_ACTIONS = frozenset({"click", "press", "check", "uncheck"})
 
 
 @dataclass
@@ -40,6 +45,12 @@ class ActionResult:
     user_action_required: bool = False
     policy_result: PolicyResult | None = None
     resolved_value: str | None = None  # Audit B3: value_ref resolved to actual string
+    # Phase 8 (multi-tab awareness): when an action opened a new tab, the
+    # newest tab becomes the page every later observation/action must use.
+    # `active_page` is that page; `tab_switch` is the explicit record of the
+    # change for the workflow trace. Both stay None for same-tab actions.
+    tab_switch: TabSwitch | None = None
+    active_page: "Page | None" = None
 
 
 class BrowserExecutor:
@@ -54,6 +65,7 @@ class BrowserExecutor:
         document_registry: DocumentRegistry | None = None,
         policy_engine: PolicyEngine | None = None,
         document_policy: DocumentPolicy | None = None,
+        close_orphan_tabs: bool = True,
     ) -> None:
         self.locator_resolver = LocatorResolver()
         self.verifier = ActionVerifier()
@@ -61,6 +73,10 @@ class BrowserExecutor:
         self.document_resolver = DocumentResolver(document_registry or DocumentRegistry())
         self.policy_engine = policy_engine or PolicyEngine()
         self.document_policy = document_policy or DocumentPolicy()
+        # Phase 8 policy for the tab a click left behind: closing it is the
+        # simplest option and keeps one click from ever leaving a pile of
+        # duplicate tabs. Set False to keep it open (unobserved) instead.
+        self.close_orphan_tabs = close_orphan_tabs
 
     def set_vault(self, vault: UserVault) -> None:
         self.value_resolver = ValueResolver(vault)
@@ -160,11 +176,24 @@ class BrowserExecutor:
                     )
 
         try:
+            # Phase 8: remember which tabs existed before the action so a
+            # tab opened by it cannot go unnoticed.
+            pages_before = (
+                pages_for(page) if action.action in _TAB_OPENING_ACTIONS else []
+            )
+            url_before = safe_url(page)
+
             # Execute the raw action
             result = await self._do_execute(page, action, page_state)
 
             if not result.success:
                 return result
+
+            # Phase 8: reconcile tab state. If the action opened a tab, the
+            # newest tab becomes the page that is observed, verified and
+            # returned to the caller — the frozen original is no longer
+            # what the rest of the system looks at.
+            page = await self._sync_tabs(page, action, pages_before, url_before, result)
 
             # Re-observe after state-changing action
             from app.browser.observer import PageObserver
@@ -216,6 +245,47 @@ class BrowserExecutor:
                 message=f"Execution error: {e}",
                 recovery_required=True,
             )
+
+    async def _sync_tabs(
+        self,
+        page: Page,
+        action: BrowserAction,
+        pages_before: list[Page],
+        url_before: str,
+        result: ActionResult,
+    ) -> Page:
+        """Adopt the newest tab when an action opened one (Phase 8).
+
+        Records the switch on the ActionResult so the runner can follow it
+        and write it into the workflow trace, and returns the page the rest
+        of ``execute()`` must use.
+        """
+        if action.action not in _TAB_OPENING_ACTIONS:
+            return page
+
+        # Waiting for a tab is only worth its short grace period when the
+        # tracked page itself did not move: a same-tab navigation is real
+        # progress, whereas "nothing changed here" is the exact signature
+        # of the click that landed in a tab nobody was watching.
+        wait_for_tabs = safe_url(page) == url_before
+
+        sync = await sync_active_page(
+            page,
+            pages_before,
+            close_orphans=self.close_orphan_tabs,
+            wait_for_tabs=wait_for_tabs,
+        )
+        if sync.switch is None:
+            return page
+
+        result.tab_switch = sync.switch
+        result.active_page = sync.active_page
+        result.message = f"{result.message} — {sync.switch.describe()}"
+        logger.info(
+            "Action %s changed the active tab: %s -> %s",
+            action.action, sync.switch.from_url, sync.switch.to_url,
+        )
+        return sync.active_page
 
     async def _do_execute(
         self, page: Page, action: BrowserAction, page_state: PageState

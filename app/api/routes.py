@@ -128,6 +128,29 @@ def _vault_model_guard(
     )
 
 
+def _free_tier_model_notice(model: str | None, *, vault_loaded: bool) -> str | None:
+    """Early, visible warning about an unpinned free-tier model (audit §4).
+
+    The Z6 guard refuses free-tier + populated vault outright. This notice
+    covers the quieter case — a free-tier model with an empty vault, which
+    runs fine today and starts refusing the moment real data is added. It
+    is surfaced from the first poll so the refusal is never discovered for
+    the first time in the middle of a real run.
+    """
+    if not model or not is_free_tier_model(model):
+        return None
+    if vault_loaded:
+        return None  # the hard guard above already handled this combination
+    return (
+        f"OPENROUTER_MODEL is '{model}', a free-tier/anonymous model with "
+        f"contested data retention and no independent quality rating. It "
+        f"runs now only because the vault is empty — once you populate the "
+        f"vault this run will be refused. Pin OPENROUTER_MODEL to a named "
+        f"provider (e.g. 'anthropic/claude-sonnet-4-20250514', "
+        f"'openai/gpt-4o') before adding real data."
+    )
+
+
 # ── Site Registry Endpoints ────────────────────────────────
 
 
@@ -313,6 +336,10 @@ async def start_automation(body: AutomateRequest) -> dict:
         "planning_mode": None,
         "llm_model": None,
         "llm_disabled_reason": None,
+        "model_warning": None,
+        "open_tab_count": 1,
+        "tab_switches": [],
+        "stall_reason": None,
         "confirm_event": asyncio.Event(),
         "approved": None,
     }
@@ -401,6 +428,15 @@ async def _run_automation(workflow_id: str, url: str, task: str) -> None:
             logger.error("Automation %s: %s", workflow_id, guard_reason)
             return
 
+        # Audit §4: an unpinned free-tier model is flagged from the first
+        # poll, not discovered when the guard above starts refusing runs.
+        wf["model_warning"] = _free_tier_model_notice(
+            settings.openrouter_model if llm else None,
+            vault_loaded=bool(wf["vault_loaded"]),
+        )
+        if wf["model_warning"]:
+            logger.warning("Automation %s: %s", workflow_id, wf["model_warning"])
+
         manager = BrowserManager(settings)
 
         await manager.start()
@@ -476,17 +512,24 @@ async def _run_automation(workflow_id: str, url: str, task: str) -> None:
             wf["approved"] = None
 
             workflow_state = await runner.resume(
-                page=page, workflow=workflow_state, approved=approved,
+                page=manager.page, workflow=workflow_state, approved=approved,
             )
 
         # Update workflow with results
         _sync_workflow_to_wf(wf, workflow_state)
         wf["status"] = workflow_state.status.value
 
-        # Take final screenshot
+        # Take final screenshot. Phase 8: use the ACTIVE tab — a click that
+        # opened a sub-portal tab moved the workflow there, and the original
+        # handle may already be closed.
         try:
-            screenshot = await page.screenshot(full_page=False)
-            _add_screenshot(wf, "final", workflow_state.current_url or url, screenshot.hex())
+            active_page = manager.page
+            screenshot = await active_page.screenshot(full_page=False)
+            _add_screenshot(
+                wf, "final", workflow_state.current_url or active_page.url,
+                screenshot.hex(),
+            )
+            wf["page_title"] = await active_page.title()
         except Exception:
             pass
 
@@ -537,11 +580,20 @@ def _sync_workflow_to_wf(wf: dict[str, Any], ws) -> None:
     wf["total_actions"] = ws.total_actions
     wf["successful_actions"] = ws.successful_actions
     wf["failed_actions"] = ws.failed_actions
+    # Multi-tab awareness (Phase 8) and labeled stalls (Phase 9): both are
+    # visible from the same place an LLM outage or empty vault is visible.
+    wf["open_tab_count"] = ws.open_tab_count
+    wf["tab_switches"] = ws.tab_switches
+    wf["stall_reason"] = ws.stall_reason
     # Planning-mode visibility (P0-37): keep the early values written at
     # launch consistent with the workflow's own record.
     wf["planning_mode"] = ws.planning_mode
     wf["llm_model"] = ws.llm_model
     wf["llm_disabled_reason"] = ws.llm_disabled_reason
+    # Which page the workflow actually ended up on — after a tab switch the
+    # initial URL is no longer where the agent is (Phase 8).
+    if ws.current_url:
+        wf["current_url"] = ws.current_url
     # Vault visibility (Z3)
     wf["vault_loaded"] = ws.vault_loaded
     wf["vault_warning"] = ws.vault_warning
@@ -585,6 +637,10 @@ async def get_automation_status(workflow_id: str) -> dict:
         "planning_mode": wf.get("planning_mode"),
         "llm_model": wf.get("llm_model"),
         "llm_disabled_reason": wf.get("llm_disabled_reason"),
+        "model_warning": wf.get("model_warning"),
+        "open_tab_count": wf.get("open_tab_count", 1),
+        "tab_switches": wf.get("tab_switches", []),
+        "stall_reason": wf.get("stall_reason"),
         "error": wf["error"],
         "total_actions": wf.get("total_actions", 0),
         "successful_actions": wf.get("successful_actions", 0),

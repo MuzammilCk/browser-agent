@@ -26,6 +26,7 @@ from app.browser.dom import (
     extract_navigation,
     extract_validations,
 )
+from app.browser.tabs import build_tabs_state
 from app.models.page_state import (
     AlertState,
     AuthenticationState,
@@ -100,6 +101,11 @@ class PageObserver:
             elements, alerts, validation_errors, auth, navigation
         )
 
+        # Multi-tab state (Phase 8): what the model sees must include the
+        # fact that other tabs exist — a click that opened one used to be
+        # invisible to the entire stack.
+        tabs = build_tabs_state(page)
+
         page_state = PageState(
             url=page.url,
             title=navigation.title,
@@ -110,6 +116,7 @@ class PageObserver:
             validation_errors=validation_errors,
             frames=frames,
             navigation=navigation,
+            tabs=tabs,
             authentication=auth,
             visual_fallback_available=True,
         )
@@ -123,12 +130,15 @@ class PageObserver:
         )
 
         logger.info(
-            "Page observed: type=%s, elements=%d, frames=%d, validations=%d, alerts=%d",
+            "Page observed: type=%s, elements=%d, frames=%d, validations=%d, "
+            "alerts=%d, tabs=%d(active=%d)",
             page_type,
             len(elements),
             len(frames),
             len(validation_errors),
             len(alerts),
+            tabs.total,
+            tabs.active_index,
         )
 
         return observation

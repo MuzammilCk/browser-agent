@@ -234,11 +234,16 @@ RULES:
 9. Only choose "stop" when the task is complete or genuinely impossible
    from this page. Do NOT stop merely because the target is not in the
    visible list — prefer scroll_to or the closest matching element.
-10. Output ONLY valid JSON."""
+10. Some portal links open a NEW TAB. "Browser tabs" below tells you how
+    many are open and which one you are on; the elements listed are from
+    that tab only. If a click already moved you into a sub-portal tab, work
+    there — do not click the same link again.
+11. Output ONLY valid JSON."""
 
     user_prompt = f"""Current page: {page_state.url}
 Page type: {page_state.page_type}
 Title: {page_state.title}
+Browser tabs: {page_state.tabs.describe()}
 Interactive elements on page: {len(elements_info)}{'; list truncated to top ' + str(_MAX_ELEMENTS_FOR_LLM) + ' by task relevance' if truncated else ''}
 
 Elements (ref, role, name — match task keywords against "name"):

@@ -104,6 +104,48 @@ class NavigationState(BaseModel):
     title: str = ""
 
 
+class TabState(BaseModel):
+    """One open browser tab in the automation context (audit Phase 8).
+
+    Which page is "active" used to be implicit — whatever Page object the
+    runner happened to hold. A click that opened a ``target="_blank"`` tab
+    left that object frozen on the original page while the real navigation
+    happened in a tab nothing in the stack knew about. Tabs are now
+    explicit, observable state.
+    """
+
+    index: int = Field(description="Position of the tab in the browser context")
+    url: str = Field(default="", description="Current URL of the tab")
+    active: bool = Field(
+        default=False,
+        description="True for the tab the agent is currently observing/acting on",
+    )
+
+
+class TabsState(BaseModel):
+    """Multi-tab state of the browser context at observation time."""
+
+    total: int = Field(default=1, description="Number of open tabs")
+    active_index: int = Field(
+        default=0, description="Index of the tab this observation describes"
+    )
+    tabs: list[TabState] = Field(
+        default_factory=list, description="All open tabs (empty when unknown)"
+    )
+
+    def describe(self) -> str:
+        """One line the planner can put in front of the model."""
+        if self.total <= 1:
+            return "1 browser tab open (no other tabs)."
+        others = "; ".join(
+            f"#{t.index + 1} {t.url}" for t in self.tabs if not t.active
+        )
+        return (
+            f"{self.total} browser tabs open — you are observing and acting on "
+            f"tab #{self.active_index + 1}. Other tabs: {others}"
+        )
+
+
 class AuthenticationState(BaseModel):
     """Authentication challenge detection state.
 
@@ -160,6 +202,10 @@ class PageState(BaseModel):
     )
     navigation: NavigationState = Field(
         default_factory=NavigationState, description="Nav state"
+    )
+    tabs: TabsState = Field(
+        default_factory=TabsState,
+        description="Multi-tab state of the browser context (audit Phase 8)",
     )
     authentication: AuthenticationState = Field(
         default_factory=AuthenticationState, description="Auth challenge state"
