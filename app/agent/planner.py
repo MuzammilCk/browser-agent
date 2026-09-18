@@ -217,6 +217,21 @@ async def plan_with_llm(
         protected_refs={b["ref"] for b in bindings_info},
     )
 
+    # When on a navigation/landing page, the planner must click through
+    # to the relevant form page — never stop.  We inject this as an
+    # extra rule so the LLM knows what "navigation" means in context.
+    nav_hint = ""
+    if page_state.page_type in ("navigation", "unknown"):
+        nav_hint = (
+            "\n12. THIS IS A NAVIGATION/LANDING PAGE (no form fields visible). "
+            "You MUST click a link or button to navigate toward the task. "
+            "Look for links whose name matches the task description (e.g. "
+            "'Update Aadhaar', 'Download Aadhaar', 'Verify PAN'). "
+            "Use scroll_to if the matching element is not in the top list. "
+            'NEVER choose "stop" on a navigation page — the form is on '
+            "a sub-page. Click the closest matching link."
+        )
+
     system_prompt = f"""You are a government portal browser agent.
 
 TASK: {workflow.task_description or 'Fill the form on the current page'}
@@ -238,7 +253,7 @@ RULES:
     many are open and which one you are on; the elements listed are from
     that tab only. If a click already moved you into a sub-portal tab, work
     there — do not click the same link again.
-11. Output ONLY valid JSON."""
+11. Output ONLY valid JSON.{nav_hint}"""
 
     user_prompt = f"""Current page: {page_state.url}
 Page type: {page_state.page_type}
@@ -374,6 +389,29 @@ def plan_deterministic(
                     target_ref=el.ref,
                     observation_id=obs_id,
                 ))
+
+    # No form bindings matched — try clicking a task-relevant link.
+    # This handles landing pages misclassified as 'form' (e.g. pages
+    # with search boxes) as well as genuine navigation pages.
+    task_words = _task_keywords(workflow.task_description)
+    best_el = None
+    best_score = 0
+    for el in page_state.elements:
+        if el.role not in ("link", "button") or not el.visible:
+            continue
+        name = (el.accessible_name or el.label_text or "").lower()
+        if not name:
+            continue
+        score = len(task_words & set(re.findall(r"[a-z0-9]+", name)))
+        if score > best_score:
+            best_score = score
+            best_el = el
+    if best_el is not None and best_score > 0:
+        return ActionPlanned(BrowserAction(
+            action="click",
+            target_ref=best_el.ref,
+            observation_id=obs_id,
+        ))
 
     return NoValidAction(
         reason=(

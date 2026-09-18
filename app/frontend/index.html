@@ -679,6 +679,21 @@
         .status-failed { background: var(--attention-tint); color: var(--attention); border-color: transparent; }
         .status-waiting { background: transparent; color: var(--ink-muted); }
 
+        .auto-status-reason {
+            padding: 0.55rem var(--space-md);
+            font-size: 0.8125rem;
+            line-height: 1.45;
+            border-bottom: 1px solid var(--border);
+            background: var(--marigold-tint);
+            color: var(--ink);
+        }
+        .auto-status-reason.is-error {
+            background: var(--attention-tint);
+        }
+        .auto-status-reason strong {
+            font-weight: 600;
+        }
+
         .auto-panel-body {
             display: flex;
             overflow: hidden;
@@ -964,6 +979,7 @@
                 <button class="btn btn-secondary" style="padding:0.4rem 0.85rem;font-size:0.9375rem;" onclick="closeAutoPanel()">Hide</button>
             </div>
         </div>
+        <div class="auto-status-reason" id="autoStatusReason" style="display:none;" aria-live="polite"></div>
         <div class="auto-panel-body">
             <div class="auto-stage">
                 <div class="handoff-card" id="autoConfirmBox" style="display:none;" role="alert">
@@ -1487,6 +1503,24 @@
                     badge.className = 'auto-status-badge status-waiting';
                 } else {
                     badge.className = 'auto-status-badge status-running';
+                }
+
+                // The backend already computes a specific, typed reason for
+                // every waiting/failed state (stall_reason, llm_disabled_reason,
+                // vault_warning, model_warning, error) — surface whichever one
+                // applies instead of leaving the status word unexplained.
+                const reasonEl = document.getElementById('autoStatusReason');
+                if (reasonEl) {
+                    const isError = Boolean(wf.error);
+                    const reason = wf.error || wf.stall_reason || wf.vault_warning ||
+                        wf.llm_disabled_reason || wf.model_warning || null;
+                    if (reason) {
+                        reasonEl.innerHTML = `<strong>Why:</strong> ${escapeHtml(reason)}`;
+                        reasonEl.className = 'auto-status-reason' + (isError ? ' is-error' : '');
+                        reasonEl.style.display = 'block';
+                    } else {
+                        reasonEl.style.display = 'none';
+                    }
                 }
 
                 const confirmBox = document.getElementById('autoConfirmBox');

@@ -101,6 +101,16 @@
         .status-completed { background: var(--verified-tint); color: var(--verified); border-color: transparent; }
         .status-failed { background: var(--attention-tint); color: var(--attention); border-color: transparent; }
         .status-waiting { background: transparent; color: var(--ink-muted); }
+        .status-reason {
+            padding: 0.6rem 1.25rem;
+            font-size: 0.8125rem;
+            line-height: 1.45;
+            border-bottom: 1px solid var(--border);
+            background: var(--marigold-tint);
+            color: var(--ink);
+        }
+        .status-reason.is-error { background: var(--attention-tint); }
+        .status-reason strong { font-weight: 600; }
 
         .btn {
             padding: 0.45rem 0.95rem;
@@ -340,6 +350,7 @@
             <button class="btn btn-danger" id="stopBtn" onclick="abort()">Stop</button>
         </div>
     </div>
+    <div class="status-reason" id="wfReason" style="display:none;" aria-live="polite"></div>
     <div class="layout">
         <div class="stage">
             <div class="handoff-card" id="confirmBox" role="alert">
@@ -397,6 +408,25 @@
                 badge.className = 'badge status-waiting';
             } else {
                 badge.className = 'badge status-running';
+            }
+        }
+
+        // The backend already computes a specific, typed reason for every
+        // waiting/failed state (stall_reason, llm_disabled_reason,
+        // vault_warning, model_warning, error) — surface whichever one
+        // applies instead of leaving the status word unexplained.
+        function setReason(wf) {
+            const reasonEl = document.getElementById('wfReason');
+            if (!reasonEl) return;
+            const isError = Boolean(wf.error);
+            const reason = wf.error || wf.stall_reason || wf.vault_warning ||
+                wf.llm_disabled_reason || wf.model_warning || null;
+            if (reason) {
+                reasonEl.innerHTML = `<strong>Why:</strong> ${escapeHtml(reason)}`;
+                reasonEl.className = 'status-reason' + (isError ? ' is-error' : '');
+                reasonEl.style.display = 'block';
+            } else {
+                reasonEl.style.display = 'none';
             }
         }
 
@@ -462,6 +492,7 @@
                 document.getElementById('wfTask').textContent = wf.task || '—';
                 document.getElementById('wfUrl').textContent = wf.current_url || 'about:blank';
                 setBadge(wf.status);
+                setReason(wf);
                 document.getElementById('wfMeta').textContent =
                     wf.total_actions ? `${wf.successful_actions}/${wf.total_actions} actions` : '';
 

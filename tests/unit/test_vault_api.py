@@ -32,6 +32,8 @@ def vault_env(tmp_path, monkeypatch):
     """Point settings.data_dir at a temp dir so tests never touch real PII."""
     settings = get_settings()
     monkeypatch.setattr(settings, "data_dir", tmp_path)
+    # Clear vault encryption key so tests work with plaintext vaults
+    monkeypatch.setattr(settings, "vault_encryption_key", "")
     yield tmp_path
 
 
@@ -45,8 +47,12 @@ class TestExampleTemplate:
         vault = UserVault(**data)  # no extra keys tolerated by model
         # Every UserVault field is represented in the template
         assert set(vault.model_dump().keys()) == set(data.keys())
-        # And the template ships blank (never with real-looking data)
-        assert not any(bool(v) for v in data.values())
+        # The template ships with mock/placeholder data for testing,
+        # never with real-looking PII.  All values must be non-empty
+        # (the example is a filled-in reference, not a blank form).
+        assert all(bool(v) for v in data.values()), (
+            "Example vault should contain mock data for testing"
+        )
 
     def test_real_vault_file_is_gitignored(self):
         ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
