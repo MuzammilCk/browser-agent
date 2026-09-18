@@ -1,22 +1,47 @@
 # BUILD STATUS
 
-Last reconciled: 2026-09-19  
-Current phase: Phase 0 — Control-plane preparation  
-Overall: IN PROGRESS  
+Last reconciled: 2026-09-19
+Current phase: Phase 1 — Stabilize browser foundation
+Overall: IN PROGRESS
 Release status: NOT PRODUCTION READY
+
+## Phase 0 evidence
+
+Control plane is complete.
+
+Created:
+
+- AGENTS.md
+- context.md
+- implementation_plan.md
+- docs/ARCHITECTURE_TARGET.md
+- docs/AGENT_PROTOCOL.md
+- docs/BUILD_STATUS.md
+- docs/DECISIONS.md
+- docs/SECURITY_MODEL.md
+- docs/EVAL_PLAN.md
+- docs/RESEARCH_BASIS.md
+
+Legacy pointer files updated:
+
+- implementation-plan.md
+- docs/context.md
+- docs/ARCHITECTURE.md
+
+Evidence: these files were committed to current main during Phase 0. The next agent must still inspect current HEAD before making implementation claims.
 
 ## Evidence policy
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible evidence: UNVERIFIED
+Current reproducible test baseline: UNVERIFIED.
 
 ## Phase tracker
 
 | Phase | Status |
 |---|---|
-| 0 Control plane | IN PROGRESS |
-| 1 Browser foundation | UNVERIFIED |
+| 0 Control plane | COMPLETE |
+| 1 Browser foundation | IN PROGRESS |
 | 2 AgentRuntime | NOT STARTED |
 | 3 Tool Registry | NOT STARTED |
 | 4 OpenRouter agent loop | NOT STARTED |
@@ -48,6 +73,22 @@ Known from repository inspection:
 - Synthetic/unit/integration/safety tests exist.
 
 These are capabilities, not current release certification.
+
+## Phase 1 immediate work
+
+The next coding agent must first establish the current baseline and stabilize the browser foundation before changing the agent architecture.
+
+Required first evidence:
+
+~~~text
+environment/dependencies
+→ test count
+→ failing tests
+→ Playwright launch check
+→ synthetic observe/act/verify/re-observe
+~~~
+
+Then update this file with exact commands and results.
 
 ## Main architectural gap
 
