@@ -1,0 +1,122 @@
+diff --git a/app/frontend/automation.html b/app/frontend/automation.html
+index b4ebac2..3327151 100644
+--- a/app/frontend/automation.html
++++ b/app/frontend/automation.html
+@@ -101,6 +101,16 @@
+         .status-completed { background: var(--verified-tint); color: var(--verified); border-color: transparent; }
+         .status-failed { background: var(--attention-tint); color: var(--attention); border-color: transparent; }
+         .status-waiting { background: transparent; color: var(--ink-muted); }
++        .status-reason {
++            padding: 0.6rem 1.25rem;
++            font-size: 0.8125rem;
++            line-height: 1.45;
++            border-bottom: 1px solid var(--border);
++            background: var(--marigold-tint);
++            color: var(--ink);
++        }
++        .status-reason.is-error { background: var(--attention-tint); }
++        .status-reason strong { font-weight: 600; }
+ 
+         .btn {
+             padding: 0.45rem 0.95rem;
+@@ -340,6 +350,7 @@
+             <button class="btn btn-danger" id="stopBtn" onclick="abort()">Stop</button>
+         </div>
+     </div>
++    <div class="status-reason" id="wfReason" style="display:none;" aria-live="polite"></div>
+     <div class="layout">
+         <div class="stage">
+             <div class="handoff-card" id="confirmBox" role="alert">
+@@ -400,6 +411,25 @@
+             }
+         }
+ 
++        // The backend already computes a specific, typed reason for every
++        // waiting/failed state (stall_reason, llm_disabled_reason,
++        // vault_warning, model_warning, error) — surface whichever one
++        // applies instead of leaving the status word unexplained.
++        function setReason(wf) {
++            const reasonEl = document.getElementById('wfReason');
++            if (!reasonEl) return;
++            const isError = Boolean(wf.error);
++            const reason = wf.error || wf.stall_reason || wf.vault_warning ||
++                wf.llm_disabled_reason || wf.model_warning || null;
++            if (reason) {
++                reasonEl.innerHTML = `<strong>Why:</strong> ${escapeHtml(reason)}`;
++                reasonEl.className = 'status-reason' + (isError ? ' is-error' : '');
++                reasonEl.style.display = 'block';
++            } else {
++                reasonEl.style.display = 'none';
++            }
++        }
++
+         function appendTrace(steps) {
+             const el = document.getElementById('logList');
+             if (el.querySelector('.trace-empty')) el.innerHTML = '';
+@@ -462,6 +492,7 @@
+                 document.getElementById('wfTask').textContent = wf.task || '—';
+                 document.getElementById('wfUrl').textContent = wf.current_url || 'about:blank';
+                 setBadge(wf.status);
++                setReason(wf);
+                 document.getElementById('wfMeta').textContent =
+                     wf.total_actions ? `${wf.successful_actions}/${wf.total_actions} actions` : '';
+ 
+diff --git a/app/frontend/index.html b/app/frontend/index.html
+index 6903eda..bf94a7a 100644
+--- a/app/frontend/index.html
++++ b/app/frontend/index.html
+@@ -679,6 +679,21 @@
+         .status-failed { background: var(--attention-tint); color: var(--attention); border-color: transparent; }
+         .status-waiting { background: transparent; color: var(--ink-muted); }
+ 
++        .auto-status-reason {
++            padding: 0.55rem var(--space-md);
++            font-size: 0.8125rem;
++            line-height: 1.45;
++            border-bottom: 1px solid var(--border);
++            background: var(--marigold-tint);
++            color: var(--ink);
++        }
++        .auto-status-reason.is-error {
++            background: var(--attention-tint);
++        }
++        .auto-status-reason strong {
++            font-weight: 600;
++        }
++
+         .auto-panel-body {
+             display: flex;
+             overflow: hidden;
+@@ -964,6 +979,7 @@
+                 <button class="btn btn-secondary" style="padding:0.4rem 0.85rem;font-size:0.9375rem;" onclick="closeAutoPanel()">Hide</button>
+             </div>
+         </div>
++        <div class="auto-status-reason" id="autoStatusReason" style="display:none;" aria-live="polite"></div>
+         <div class="auto-panel-body">
+             <div class="auto-stage">
+                 <div class="handoff-card" id="autoConfirmBox" style="display:none;" role="alert">
+@@ -1489,6 +1505,24 @@
+                     badge.className = 'auto-status-badge status-running';
+                 }
+ 
++                // The backend already computes a specific, typed reason for
++                // every waiting/failed state (stall_reason, llm_disabled_reason,
++                // vault_warning, model_warning, error) — surface whichever one
++                // applies instead of leaving the status word unexplained.
++                const reasonEl = document.getElementById('autoStatusReason');
++                if (reasonEl) {
++                    const isError = Boolean(wf.error);
++                    const reason = wf.error || wf.stall_reason || wf.vault_warning ||
++                        wf.llm_disabled_reason || wf.model_warning || null;
++                    if (reason) {
++                        reasonEl.innerHTML = `<strong>Why:</strong> ${escapeHtml(reason)}`;
++                        reasonEl.className = 'auto-status-reason' + (isError ? ' is-error' : '');
++                        reasonEl.style.display = 'block';
++                    } else {
++                        reasonEl.style.display = 'none';
++                    }
++                }
++
+                 const confirmBox = document.getElementById('autoConfirmBox');
+                 if (confirmBox) {
+                     if (wf.status === 'ready_for_confirmation' && wf.pending_action) {
