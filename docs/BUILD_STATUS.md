@@ -34,14 +34,14 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline: **505 tests passing** (431 unit + 44 synthetic + 30 browser-error/integration tests). 0 tests failing. 2 tests were previously failing due to `.env` misconfiguration (ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true was defeating the model guardrail) — fixed by setting it to false.
+Current reproducible test baseline: **506 tests passing** (416 unit + 19 synthetic + 65 integration + 6 real_sites). 0 tests failing. 2 tests were previously failing due to `.env` misconfiguration (ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true was defeating the model guardrail) — fixed by setting it to false.
 
 ## Phase 1 evidence
 
 ### Test count
 ```
 pytest tests/unit/ tests/integration/ tests/synthetic_forms/ tests/real_sites/ -q
-→ 505 passed in 188.5s
+→ 506 passed in 188.5s
 ```
 
 ### Previously failing tests (now fixed)
@@ -78,7 +78,7 @@ Validated via `tests/synthetic_forms/` (31 tests, all passing):
 | 3 | radio | `test_observer.py::TestCheckboxesRadios::test_observes_radios` + `test_executor.py::TestCheckUncheckAction::test_check_radio_button` | ✅ Yes | Sufficient |
 | 4 | checkbox | `test_observer.py::TestCheckboxesRadios::test_observes_checkboxes` + `test_executor.py::TestCheckUncheckAction::test_check_checkbox` | ✅ Yes | Sufficient |
 | 5 | file input | `test_observer.py::TestFileUpload` + `test_executor.py::TestUploadAction` | ✅ Yes (NEW) | Sufficient — observe + upload execution + DOM verification |
-| 6 | iframe | `test_observer.py::TestIframeObservation` + `test_executor.py::TestIframeInteraction` | ✅ Yes (NEW) | Sufficient — observe + iframe content interaction + DOM verification |
+| 6 | iframe | `test_observer.py::TestIframeObservation` + `test_executor.py::TestIframeInteraction` | ✅ Yes (NEW) | Sufficient — observe + executor-level iframe action via frame-aware LocatorResolver + DOM verification |
 | 7 | dynamic form | `test_observer.py::TestDropdownForm::test_dependent_dropdown_appears` + `test_executor.py::TestSelectAction::test_select_dependent_dropdown` | ✅ Yes | Sufficient |
 | 8 | validation | `test_observer.py::TestValidationForm::test_observes_validation_errors` + `test_verification.py::TestFillFailureDetection::test_detects_validation_appeared` | ✅ Yes | Sufficient |
 | 9 | stale references | `test_executor.py::TestStaleRefRejection::test_stale_observation_rejected` | ✅ Yes | Sufficient |
@@ -87,14 +87,15 @@ Validated via `tests/synthetic_forms/` (31 tests, all passing):
 
 ### New files added for Phase 1 coverage
 - `tests/synthetic_forms/pages/file_upload.html` — page with file inputs
-- `tests/synthetic_forms/pages/iframe.html` — page with iframe (uses `srcdoc` for content)
+- `tests/synthetic_forms/pages/iframe.html` — page with iframe (loads iframe_content.html via src)
+- `tests/synthetic_forms/pages/iframe_content.html` — iframe content (separate file for URL-based frame matching)
 - `tests/integration/fixtures/test_photo.jpg` — real JPEG fixture for upload tests (created with PIL)
 - `tests/integration/test_browser_errors.py` — browser error visibility tests (3 tests)
 
 ### Current Phase 1 status
 | Item | Status | Evidence |
 |------|--------|----------|
-| Run current test suite | ✅ Done | 505 passed, 0 failed |
+| Run current test suite | ✅ Done | 506 passed, 0 failed |
 | Record exact current baseline | ✅ Done | See above |
 | Synthetic coverage: text/select/radio/checkbox/file/iframe/dynamic/validation | ✅ Done (31 tests) | tests/synthetic_forms/ |
 | Execution coverage: fill/click/select/check/radio/upload/iframe/dynamic | ✅ Done (32 tests) | tests/integration/test_executor.py::TestFillAction, TestClickAction, TestSelectAction, TestCheckUncheckAction, TestUploadAction, TestIframeInteraction |
@@ -183,7 +184,7 @@ persistent AgentRuntime
 ## Production gates
 
 Phase 1 completion:
-- [x] current regression suite green (505 tests, 0 failures)
+- [x] current regression suite green (506 tests, 0 failures)
 - [ ] persistent AgentSession (Phase 2)
 - [x] policy on every mutation (PolicyEngine wired into BrowserExecutor)
 - [x] verification on every mutation (8 per-action verifiers)

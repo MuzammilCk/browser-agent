@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Iframe Content</title>
+</head>
+<body>
+    <form id="frameForm">
+        <label for="frameInput">Frame-Specific Field</label>
+        <input type="text" id="frameInput" name="frameInput" placeholder="Inside iframe" />
+        <button type="button" id="frameButton" onclick="document.getElementById('frameInput').value='frame was clicked'">
+            Click in Frame
+        </button>
+    </form>
+</body>
+</html>

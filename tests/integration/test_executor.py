@@ -444,3 +444,40 @@ class TestIframeInteraction:
             # Verify
             value = await frame.input_value("#frameInput")
             assert value == "Filled from parent"
+
+    @pytest.mark.asyncio
+    async def test_executor_fills_input_inside_iframe(self, settings, executor, observer) -> None:
+        """BrowserExecutor resolves iframe elements via frame_id and fills them.
+
+        This goes through the full BrowserAction + BrowserExecutor pipeline
+        (policy → locator → Playwright → verify → re-observe), proving the
+        frame-aware LocatorResolver resolves elements inside iframes.
+        """
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_BASE}/iframe.html")
+            obs = await observer.observe(page)
+
+            # The iframe input should be observed with frame_id set
+            frame_input = next(
+                e for e in obs.page_state.elements
+                if e.html_name == "frameInput" and e.frame_id is not None
+            )
+            assert frame_input.frame_id == "f1"
+
+            # Execute fill through the executor — this exercises
+            # LocatorResolver._get_resolution_target which resolves
+            # against the correct Playwright Frame by frame_id.
+            action = BrowserAction(
+                action="fill",
+                target_ref=frame_input.ref,
+                literal_value="Executor fill",
+            )
+            result = await executor.execute(page, action, obs)
+            assert result.success is True
+            assert result.verification is not None
+            assert result.post_observation is not None
+
+            # Verify the value was actually written into the iframe
+            frame = page.frames[1]
+            actual = await frame.input_value("#frameInput")
+            assert actual == "Executor fill"

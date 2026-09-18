@@ -50,7 +50,7 @@ Retain:
 
 Tasks:
 
-- [x] run current test suite → 501 passed, 0 failed
+- [x] run current test suite → 506 passed, 0 failed
 - [x] record exact current baseline → docs/BUILD_STATUS.md
 - [x] synthetic coverage: text/select/radio/checkbox/file/iframe/dynamic/validation → 31 synthetic tests + 14 verification tests
 - [x] stale-reference tests → TestStaleRefRejection (2 tests)
@@ -69,8 +69,8 @@ observe → act → verify → re-observe
 works without an LLM.
 ~~~
 
-Evidence: all 501 tests pass, including 3 new browser error visibility tests
-and 4 new synthetic form tests (file input + iframe observation).
+Evidence: all 506 tests pass, including 3 new browser error visibility tests
+and 6 new synthetic form tests (file input observe + iframe observe, 2 each).
 
 ---
 
