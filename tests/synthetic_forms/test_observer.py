@@ -230,3 +230,67 @@ class TestMultiStep:
             state = obs.page_state
             all_names = " ".join(e.name or "" for e in state.elements).lower()
             assert "email" in all_names or "phone" in all_names
+
+
+class TestFileUpload:
+    """Tests against file_upload.html — file input observation."""
+
+    @pytest.mark.asyncio
+    async def test_observes_file_inputs(self, settings: Settings, observer: PageObserver) -> None:
+        """Observer detects file input elements with input_type='file'."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/file_upload.html")
+            obs = await observer.observe(page)
+            state = obs.page_state
+
+            file_inputs = [e for e in state.elements if e.input_type == "file"]
+            assert len(file_inputs) >= 2
+
+            photo = next(e for e in file_inputs if e.html_name == "photo")
+            assert photo.role == "button"
+            assert photo.accessible_name == "Upload Passport Photo"
+            assert photo.required is True
+
+            aadhaar = next(e for e in file_inputs if e.html_name == "aadhaar")
+            assert aadhaar.role == "button"
+            assert aadhaar.accessible_name == "Upload Aadhaar Card"
+
+    @pytest.mark.asyncio
+    async def test_file_input_element_refs_unique(self, settings: Settings, observer: PageObserver) -> None:
+        """File input refs are unique."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/file_upload.html")
+            obs = await observer.observe(page)
+            refs = [e.ref for e in obs.page_state.elements]
+            assert len(refs) == len(set(refs))
+
+
+class TestIframeObservation:
+    """Tests against iframe.html — iframe/frame metadata observation."""
+
+    @pytest.mark.asyncio
+    async def test_observes_iframe_in_frames(self, settings: Settings, observer: PageObserver) -> None:
+        """Observer detects iframes as frame entries."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/iframe.html")
+            obs = await observer.observe(page)
+            state = obs.page_state
+
+            assert len(state.frames) >= 1
+            frame = state.frames[0]
+            assert frame.frame_id is not None
+            assert frame.url is not None or frame.name is not None
+
+    @pytest.mark.asyncio
+    async def test_observes_main_frame_elements(self, settings: Settings, observer: PageObserver) -> None:
+        """Observer detects main frame elements alongside iframe metadata."""
+        async with BrowserManager(settings) as manager:
+            page = await manager.open(f"{SYNTHETIC_SERVER_BASE}/iframe.html")
+            obs = await observer.observe(page)
+            state = obs.page_state
+
+            text_inputs = [e for e in state.elements if e.input_type == "text"]
+            assert len(text_inputs) >= 2
+
+            name_field = next(e for e in text_inputs if e.html_name == "fullName")
+            assert name_field.label_text == "Applicant Name"

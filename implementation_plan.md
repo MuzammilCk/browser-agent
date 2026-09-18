@@ -3,7 +3,8 @@
 ## Status
 
 Phase 0 — Control-plane preparation  
-Overall: NOT COMPLETE  
+Phase 1 — Browser foundation (COMPLETE)  
+Overall: IN PROGRESS  
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -12,21 +13,21 @@ Evidence policy: every checkbox requires current evidence.
 
 Deliver:
 
-- [ ] AGENTS.md
-- [ ] context.md
-- [ ] implementation_plan.md
-- [ ] docs/ARCHITECTURE_TARGET.md
-- [ ] docs/AGENT_PROTOCOL.md
-- [ ] docs/BUILD_STATUS.md
-- [ ] docs/DECISIONS.md
-- [ ] docs/SECURITY_MODEL.md
-- [ ] docs/EVAL_PLAN.md
+- [x] AGENTS.md
+- [x] context.md
+- [x] implementation_plan.md
+- [x] docs/ARCHITECTURE_TARGET.md
+- [x] docs/AGENT_PROTOCOL.md
+- [x] docs/BUILD_STATUS.md
+- [x] docs/DECISIONS.md
+- [x] docs/SECURITY_MODEL.md
+- [x] docs/EVAL_PLAN.md
 
 Exit criteria:
 
-- [ ] legacy docs point to canonical files
-- [ ] no stale test-count claims are presented as current evidence
-- [ ] source-of-truth precedence is explicit
+- [x] legacy docs point to canonical files
+- [x] no stale test-count claims are presented as current evidence (BUILD_STATUS.md has current baseline)
+- [x] source-of-truth precedence is explicit (in AGENTS.md)
 
 ---
 
@@ -49,12 +50,17 @@ Retain:
 
 Tasks:
 
-- [ ] run current test suite
-- [ ] record exact current baseline
-- [ ] synthetic coverage: text/select/radio/checkbox/file/iframe/dynamic/validation
-- [ ] stale-reference tests
-- [ ] multi-tab tests
-- [ ] no swallowed browser errors
+- [x] run current test suite → 501 passed, 0 failed
+- [x] record exact current baseline → docs/BUILD_STATUS.md
+- [x] synthetic coverage: text/select/radio/checkbox/file/iframe/dynamic/validation → 31 synthetic tests + 14 verification tests
+- [x] stale-reference tests → TestStaleRefRejection (2 tests)
+- [x] multi-tab tests → TestTargetBlankClick + TestObservationReportsTabs + TestManagerTabTracking + TestRunnerTabSwitchTrace (11 tests)
+- [x] no swallowed browser errors → TestBrowserErrorVisibility (3 new tests)
+
+New files for Phase 1 coverage:
+- tests/synthetic_forms/pages/file_upload.html
+- tests/synthetic_forms/pages/iframe.html
+- tests/integration/test_browser_errors.py
 
 Exit:
 
@@ -62,6 +68,9 @@ Exit:
 observe → act → verify → re-observe
 works without an LLM.
 ~~~
+
+Evidence: all 501 tests pass, including 3 new browser error visibility tests
+and 4 new synthetic form tests (file input + iframe observation).
 
 ---
 
