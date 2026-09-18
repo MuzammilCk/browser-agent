@@ -1,14 +1,23 @@
+<<<<<<< HEAD
 # Architecture — Decisions & Component Map
 
 **Last updated:** 2026-09-18
 
 > **Rule:** Before implementation, read `docs/context.md` and `docs/architecture.md` (this file).
 > After implementation, update this file with any deviations from the planned architecture.
+=======
+# Legacy Architecture Document — Redirect
 
----
+This historical architecture document is retained for provenance only.
 
-## Component Map
+**Canonical target architecture:** [ARCHITECTURE_TARGET.md](ARCHITECTURE_TARGET.md)
+>>>>>>> 927bc65113ef1c51cafe118f42e581a7b982540a
 
+**Canonical context:** [../context.md](../context.md)
+
+**Canonical implementation plan:** [../implementation_plan.md](../implementation_plan.md)
+
+<<<<<<< HEAD
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     LOCAL WEB UI                         │
@@ -68,9 +77,13 @@
                      │
                      └──────────► next agent cycle
 ```
+=======
+**Agent contract:** [../AGENTS.md](../AGENTS.md)
+>>>>>>> 927bc65113ef1c51cafe118f42e581a7b982540a
 
----
+The old diagram describes the earlier workflow-oriented system. The target architecture now requires a persistent hierarchical agent runtime with goals/subgoals, typed tools, WorldState, memory, reflection, durable interrupts, deterministic policy and verification.
 
+<<<<<<< HEAD
 ## Module Responsibility Map
 
 | Module | Responsibility | Key Types |
@@ -164,3 +177,6 @@
 - Phase 10 — Prompt injection testing (sanitizer in place; tests need hostile pages)
 
 **Next action:** Phase 7 full E2E with live OpenRouter (requires API key).
+=======
+Do not use this document to define new architecture.
+>>>>>>> 927bc65113ef1c51cafe118f42e581a7b982540a
