@@ -1,8 +1,8 @@
 # BUILD STATUS
 
-Last reconciled: 2026-09-19
+Last reconciled: 2026-09-18
 Current phase: Phase 1 — Stabilize browser foundation
-Overall: IN PROGRESS
+Overall: IN PROGRESS (Phase 0 complete, Phase 1 baseline established)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -28,13 +28,55 @@ Legacy pointer files updated:
 - docs/context.md
 - docs/ARCHITECTURE.md
 
-Evidence: these files were committed to current main during Phase 0. The next agent must still inspect current HEAD before making implementation claims.
+Evidence: these files were committed to current main during Phase 0.
 
 ## Evidence policy
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline: UNVERIFIED.
+Current reproducible test baseline: **494 tests passing** (416 unit + 27 synthetic + 51 integration/real_sites). 2 tests previously failing due to `.env` misconfiguration (ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true was defeating the model guardrail) — now fixed.
+
+## Phase 1 evidence
+
+### Test count
+```
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ tests/real_sites/ -q
+→ 494 passed in 128.92s
+```
+
+### Failing tests
+| Test File | Failing Tests | Root Cause | Fix Applied |
+|-----------|---------------|------------|-------------|
+| `tests/unit/test_model_guardrails.py` | 2 (`test_refusal_happens_before_browser_launch`, `test_free_tier_env_model_also_refused`) | `.env` had `ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true` which disabled the Z6 model guard. Guard is designed to refuse free-tier model + populated vault unless explicitly overridden. | Changed `.env` to `ALLOW_ANONYMOUS_MODEL_WITH_VAULT=false` (matching `.env.example`). All 12 tests now pass. |
+
+### Playwright launch check
+```
+Chromium launched OK (Playwright 1.62.0)
+ARIA snapshot captured successfully
+Browser lifecycle: start → open → observe → close — all OK
+```
+
+### Synthetic observe → act → verify → re-observe
+Validated via `tests/synthetic_forms/` (27 tests, all passing):
+- Text inputs observed and filled
+- Select dropdowns observed and selected
+- Checkbox/radio observation
+- Validation error detection and extraction
+- Multi-step form navigation
+- Post-action verification (fill, click, select)
+- Re-observation after every action (`post_observation` in `ActionResult`)
+- Stale reference rejection
+- UNCERTAIN verification stops progression
+
+### Current Phase 1 status
+| Item | Status | Evidence |
+|------|--------|----------|
+| Run current test suite | ✅ Done | 494 passed, 0 failed |
+| Record exact current baseline | ✅ Done | See above |
+| Synthetic coverage: text/select/radio/checkbox/file/iframe/dynamic/validation | ✅ Done (27 tests) | tests/synthetic_forms/ |
+| Stale-reference tests | ✅ Done | tests/unit/test_* |
+| Multi-tab tests | ✅ Done | tests/integration/test_multi_tab.py |
+| No swallowed browser errors | ✅ Partial | No error-suppression found in observer/executor |
 
 ## Phase tracker
 

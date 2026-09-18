@@ -1,6 +1,6 @@
 # 🛡️ Safety — Rules, Risk Classes & Enforcement
 
-**Last updated:** 2024-08-24
+**Last updated:** 2026-09-18
 
 > **Rule:** Read this file before implementing any action execution, policy engine, or agent loop.
 > Safety rules are enforced in code, not merely in prompts.
@@ -41,38 +41,45 @@ These actions must **never** be implemented, regardless of LLM output:
 
 ## Enforcement Checklist
 
-### Policy Engine (Phase 8)
+### Policy Engine
 
-- [ ] Risk classification runs before every Playwright action
-- [ ] R0/R1 actions auto-approve
-- [ ] R2 actions check configured consent policy
-- [ ] R3 actions set state to `WAITING_FOR_USER`
-- [ ] R4 actions require explicit user confirmation
-- [ ] Unknown/invalid actions → FAIL CLOSED (stop, preserve state, report)
-- [ ] Policy engine is deterministic code, not LLM-dependent
+- [x] Risk classification runs before every Playwright action (`PolicyEngine.classify_action()` in `app/policy/engine.py`)
+- [x] R0/R1 actions auto-approve
+- [x] R2 actions check configured consent policy
+- [x] R3 actions set state to `WAITING_FOR_USER`
+- [x] R4 actions require explicit user confirmation
+- [x] Unknown/invalid actions → FAIL CLOSED (stop, preserve state, report)
+- [x] Policy engine is deterministic code, not LLM-dependent
 
-### Prompt Injection Defense (Phase 10)
+### Prompt Injection Defense
 
-- [ ] Page text is treated as **untrusted data**
-- [ ] System policy is never overridden by page content
-- [ ] LLM receives explicit TRUSTED/UNTRUSTED classification
-- [ ] Hidden DOM text, page instructions, embedded links are untrusted
+- [x] Page text is treated as **untrusted data** (Page-provided instructions cannot change policy — audit #7)
+- [x] System policy is never overridden by page content
+- [x] LLM receives explicit TRUSTED/UNTRUSTED classification in `PromptSanitizer` (`app/llm/sanitizer.py`)
+- [x] Hidden DOM text, page instructions, embedded links are untrusted
 
 ### Data Protection
 
-- [ ] Sensitive values resolved locally, not in LLM context
-- [ ] `USER.full_name` sent to LLM, not `"Rahul Sharma"`
-- [ ] Documents referenced semantically, not by filename
-- [ ] Passwords/OTPs excluded from logs by default
-- [ ] Full Aadhaar/PAN excluded from logs by default
-- [ ] OpenRouter API key never in source code
+- [x] Sensitive values resolved locally, not in LLM context (`USER.full_name` sent to LLM, not `"Rahul Sharma"`)
+- [x] Documents referenced semantically, not by filename (`DOCUMENT.resume_2024` not `/home/user/resume.pdf`)
+- [x] Passwords/OTPs excluded from logs by default (log sanitizer in `app/llm/sanitizer.py`)
+- [x] Full Aadhaar/PAN excluded from logs by default
+- [x] OpenRouter API key never in source code
+- [x] **Vault encryption at rest**: `VAULT_ENCRYPTION_KEY` enables Fernet+scrypt encryption of `data/vault/user_vault.json` (`app/vault/manager.py`)
+- [x] **Upload confinement**: `DOCUMENT_ALLOWED_DIRS` restricts file uploads to specified directories (`app/policy/document_policy.py`)
 
 ### Domain Safety
 
-- [ ] Trusted government domain registry exists
-- [ ] Navigation to untrusted domains is blocked or warned
-- [ ] Domain spoofing detected
-- [ ] Unexpected redirects handled safely
+- [x] Trusted government domain registry exists (`app/sites/registry.py` — 15+ trusted domains)
+- [x] Navigation to untrusted domains is blocked or warned
+- [x] Domain spoofing detected
+- [x] Unexpected redirects handled safely
+
+### Model Guardrails (audit Z6)
+
+- [x] Free-tier/anonymous OpenRouter models (`:free` suffix, `stealth/ox-alpha`) are **refused** when vault is populated (`app/agent/registry.py` → `ReferenceChecker` → `app/api/routes.py`)
+- [x] This check runs **before** browser launch — fail-fast design
+- [x] Override only via `ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true` (requires explicit consent)
 
 ---
 
@@ -117,8 +124,20 @@ The agent must STOP and report when:
 - Unexpected payment page
 - Contradictory page state
 - Verification failure after bounded retries
+- Free-tier model used with populated vault
+- API request to untrusted domain
 
 **Recovery:** Stop → preserve state → explain reason → request user intervention.
+
+---
+
+## Staleness Detection (audit #4)
+
+The agent implements stall detection to prevent infinite loops:
+
+- **Repeated action detection**: `StallDetector` in `app/agent/stall_detector.py` tracks action patterns and triggers `waiting_for_user` when no progress is observed
+- **Repeated URL detection**: identical page states (same URL + same DOM hash) within a bounded window
+- **Timeout-based detection**: agent-level timeout for individual actions
 
 ---
 
@@ -127,7 +146,7 @@ The agent must STOP and report when:
 After every state-changing action:
 
 1. Re-observe the page
-2. Verify the action had the intended effect
+2. Verify the action had the intended effect (`app/browser/verifiers/`)
 3. Check for validation errors
 4. Check for unexpected page state changes
 5. If verification fails → recovery strategy, not blind continuation
@@ -146,7 +165,23 @@ action: fill
 policy: R1_ALLOW
 executor: success
 verification: success
-timestamp: 2024-08-24T10:30:00Z
+timestamp: 2026-09-18T14:30:00Z
 ```
 
 This creates an audit trail without storing raw secrets.
+
+---
+
+## Current Safety Status
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Risk classification | Implemented | `app/policy/engine.py` |
+| Prompt injection defense | Implemented | `app/llm/sanitizer.py` |
+| Vault encryption at rest | Implemented | `app/vault/manager.py` |
+| Upload file confinement | Implemented | `app/policy/document_policy.py` |
+| Model guardrails | Implemented | `app/api/routes.py` (pre-execution) |
+| Stall detection | Implemented | `app/agent/stall_detector.py` |
+| Domain allowlist | Implemented | `app/sites/registry.py` |
+| Post-action verification | Implemented (8 verifiers) | `app/browser/verifiers/` |
+| Per-action audit trail | Implemented | `app/models/workflow_state.py` |

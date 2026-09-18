@@ -1,6 +1,6 @@
 # 📚 Government Browser Agent — Documentation Index
 
-**Last updated:** 2026-08-24
+**Last updated:** 2026-09-18
 
 ---
 
@@ -15,6 +15,7 @@ Before writing any code, the coding agent **must** read these files in order:
 | 3 | [MILESTONES.md](./MILESTONES.md) | Current milestone status — know what's done, what's next |
 | 4 | [SAFETY.md](./SAFETY.md) | Safety rules and risk classes — never violate these |
 | 5 | [BUILD_LOG.md](./BUILD_LOG.md) | What was built and verified — avoid rework |
+| 6 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Current architecture and component map (updated after Phase E) |
 
 After each implementation step, update:
 
@@ -46,7 +47,7 @@ After each implementation step, update:
 | [SETUP.md](./SETUP.md) | Environment setup and prerequisites |
 | [MILESTONES.md](./MILESTONES.md) | Phase-by-phase milestone tracker |
 | [BUILD_LOG.md](./BUILD_LOG.md) | Chronological implementation log |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | Architecture decisions and component map |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Architecture decisions and component map (current) |
 | [SAFETY.md](./SAFETY.md) | Safety rules, risk classes, enforcement checklist |
 | [PORTALS.md](./PORTALS.md) | Portal validation matrix and test status |
 | [TESTING.md](./TESTING.md) | Test strategy and coverage tracker |
@@ -55,19 +56,26 @@ After each implementation step, update:
 
 ## Quick Status
 
-| Phase | Status |
-|-------|--------|
-| Phase 0 — Repository bootstrap | ✅ Complete |
-| Phase 1 — Playwright perception engine | ✅ Complete |
-| Phase 2 — Deterministic browser executor | ✅ Complete |
-| Phase 3 — Verification engine | ✅ Complete |
-| Phase 4 — User vault + document registry | ✅ Complete |
-| Phase 5 — OpenRouter LLM gateway | ✅ Complete |
-| Phase 6 — Semantic field mapper | ✅ Complete |
-| Phase 7 — Agent control loop | ⬜ Not started |
-| Phase 8 — Risk and approval gate | ⬜ Not started |
-| Phase 9 — Vision fallback | ⬜ Not started |
-| Phase 10 — Prompt injection testing | ⬜ Not started |
+| Component | Status | Tests |
+|-----------|--------|-------|
+| Phase 0 — Repository bootstrap | ✅ Complete | 19 |
+| Phase 1 — Playwright perception engine | ✅ Complete | 14 |
+| Phase 2 — Deterministic browser executor | ✅ Complete | 47 |
+| Phase 2+ — Audit fixes | ✅ Complete | 77 |
+| Phase 3 — Verification engine | ✅ Complete | 128 |
+| Phase 4 — User vault + document registry | ✅ Complete | 34 |
+| Phase 5 — OpenRouter LLM gateway | ✅ Complete | 22 |
+| Phase 6 — Semantic field mapper | ✅ Complete | 41 |
+| Phase A — Contract hardening | ✅ Complete | 52 |
+| Phase B — Safety engine | ✅ Complete | 46 |
+| Phase C — Workflow orchestration | ✅ Complete | 20 |
+| Phase D — E2E synthetic + contract tests | ✅ Complete | 14 |
+| Phase E — Remaining audit fixes | ✅ Complete | 12 |
+| Audit (50 issues) | ✅ Complete | — |
+| **September 2026 additions** | ✅ Complete | — |
+| Vision fallback (Phase 9) | ⬜ Partial | Stubs in place |
+| Prompt injection testing (Phase 10) | ⬜ Stub only | `tests/prompt_injection/` not populated |
+| Real site observation (ISTM Test) | ⬜ Partial | PM-KISAN observed |
 
 ---
 
@@ -76,5 +84,4 @@ After each implementation step, update:
 1. **Read before coding.** Every implementation session starts by reading the docs above.
 2. **Log after coding.** Every implementation session ends by updating BUILD_LOG.md.
 3. **Verify before moving on.** Every milestone must have passing tests before the next begins.
-4. **One phase at a time.** Do not skip ahead.
-5. **Fail closed.** When uncertain, stop and ask.
+4. **Fail closed.** When uncertain, stop and ask.

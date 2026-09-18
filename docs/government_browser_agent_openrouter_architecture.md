@@ -10,9 +10,24 @@
 
 **Primary page perception:** Playwright AI-optimized ARIA/accessibility snapshot + targeted DOM metadata
 
-**Visual fallback:** Screenshot + vision-capable model through OpenRouter
+**Visual fallback:** Screenshot + vision-capable model through OpenRouter (triggered by completeness assessment, not always-on)
 
 **Execution philosophy:** Observe -> normalize -> reason -> authorize -> execute one atomic action -> verify -> observe again.
+
+---
+
+> ⚠️ **Note (2026-09-18):** Section #32 (Project Structure) is **partially outdated** — it reflects the original planned structure. The actual implemented structure differs in several areas:
+> - `app/config/` has no `model_config.py`
+> - `app/llm/` has `retry.py` and `sanitizer.py` (not just `prompts.py`)
+> - `app/browser/` has `verifiers/` directory (8 per-action verifiers), `vision.py`, `tabs.py` (no `frames.py` or `screenshots.py`)
+> - `app/agent/` has `runner.py`, `stall_detector.py`, `vision_fallback.py`, `field_mapper_models.py`, `planning_result.py` (no `workflow.py` or `recovery.py`)
+> - `app/policy/` has `document_policy.py` (no `risk.py` or `approvals.py`)
+> - `app/vault/` has `sensitivity.py` (no `user.py` or `documents.py`)
+> - `app/sites/` has inline registry (no `registry.json` or `adapters/`)
+> - `app/storage/` is mostly stub (`__init__.py` only)
+> - `app/api/` has `vault_routes.py` (not in original plan)
+>
+> See the current `docs/ARCHITECTURE.md` for the authoritative module map.
 
 ---
 

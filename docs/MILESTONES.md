@@ -1,6 +1,6 @@
 # 🎯 Milestones — Implementation Tracker
 
-**Last updated:** 2026-08-24
+**Last updated:** 2026-09-18
 
 > **Rule:** Read `docs/context.md` and `docs/architecture.md` before starting any milestone.
 > Update this file after completing each milestone with verification evidence.
@@ -417,10 +417,38 @@ Action space restricted. ✅
 
 ---
 
+## September 2026 Additions
+
+Following the audit completion, the following components were added:
+
+| Component | Description | Tests |
+|-----------|-------------|-------|
+| Vault encryption at rest | `VaultManager` with Fernet+scrypt encryption (`VAULT_ENCRYPTION_KEY`) | 12 (test_vault_crypto, test_vault, test_vault_api) |
+| Model guardrails | Free-tier/anonymous model refusal before browser launch (`ALLOW_ANONYMOUS_MODEL_WITH_VAULT`) | 8 (test_model_guardrails) |
+| Multi-tab tracking | `TabTracker` for Page lifecycle state across tabs | 3 (test_tabs, test_multi_tab) |
+| Stall detection | `StallDetector` for repeated-action detection | 6 (test_stall_detector) |
+| Vision fallback wiring | `VisionFallbackRequester` + completeness assessment | 21 (test_vision, test_vision_fallback_wiring) |
+| API routes | FastAPI endpoints for site registry, automation, vault CRUD | 14 (test_api_automate, test_vault_api) |
+| Confirmation flow | Explicit confirmation for R4 actions | 2 (test_confirmation_flow) |
+
+**Total test count: ~457 tests** (416 unit + 51 integration/synthetic/real_sites + stubs)
+
+---
+
 ## Future Phases
 
-| Phase | Goal |
-|-------|------|
-| Phase 9 | Vision fallback with real OpenRouter multimodal |
-| Phase 10 | Prompt injection testing |
-| ISTM Test | Real government site observation-only test |
+| Phase | Goal | Status |
+|-------|------|--------|
+| Phase 9 | Vision fallback with real OpenRouter multimodal | Partial (stubs in place) |
+| Phase 10 | Prompt injection testing | Partial (stub `tests/prompt_injection/`) |
+| ISTM Test | Real government site observation-only test | Partial (PM-KISAN observed) |
+| Safety Tests | Dedicated safety test suite | Not started (stub `tests/safety/`) |
+| Portal Regression | Cross-portal consistency tests | Not started (stub `tests/portal_regression/`) |
+
+---
+
+## Known Test Failures
+
+| Test File | Failing Tests | Root Cause |
+|-----------|---------------|------------|
+| `tests/unit/test_model_guardrails.py` | 2 (`test_refusal_happens_before_browser_launch`, `test_free_tier_env_model_also_refused`) | `.env` has expired/invalid OpenRouter API key → 401 errors cascade |

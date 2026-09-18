@@ -1,6 +1,6 @@
 # 🌐 Portals — Validation Matrix & Test Status
 
-**Last updated:** 2024-08-24
+**Last updated:** 2026-09-18
 
 > **Rule:** A portal is only marked "supported" after a reproducible regression test passes.
 > Portals without verified tests are marked `UNVERIFIED`.
@@ -26,20 +26,76 @@
 
 ## Portal Registry
 
-### Suggested First Test Set
+The trusted government domain registry is implemented in `app/sites/registry.py` with 60+ domains. All domains have associated service task descriptions and special constraints.
+
+### Verified Test Set
+
+| # | Portal | Domain | Classes | Status | Test File | Notes |
+|---|--------|--------|---------|--------|-----------|-------|
+| 1 | PM-KISAN | pmkisan.gov.in | A | OBSERVED | `tests/real_sites/test_pmkisan_observe.py` | Observation-only test — verifies ARIA + DOM extraction on real government portal (no data submission) |
+
+### Registered Portals (UNVERIFIED)
 
 | # | Portal | Domain | Classes | Status | Notes |
 |---|--------|--------|---------|--------|-------|
-| 1 | ServicePlus | serviceonline.gov.in | A, B | UNVERIFIED | Generic service workflow |
-| 2 | Udyam | udyamregistration.gov.in | A, C | UNVERIFIED | Registration + OTP boundary |
-| 3 | GST | gst.gov.in | B, C | UNVERIFIED | Multi-stage + OTP |
-| 4 | Bihar RTPS | serviceonline.bihar.gov.in | A, D | UNVERIFIED | Documents + acknowledgement |
-| 5 | Passport Seva | passportindia.gov.in | B, F, G | UNVERIFIED | Service + appointment + payment |
-| 6 | Vahan | vahan.parivahan.gov.in | B, E | UNVERIFIED | Dynamic service workflow |
-| 7 | CPGRAMS | pgportal.gov.in | A, C | UNVERIFIED | Grievance + authentication |
-| 8 | NCH | consumerhelpline.gov.in | A, C | UNVERIFIED | Complaint workflow |
-| 9 | UPSC/SSC | upsc.gov.in / ssc.nic.in | A, B | UNVERIFIED | Structured application |
-| 10 | PM-KISAN | pmkisan.gov.in | A | UNVERIFIED | Citizen/service flow |
+| 2 | Aadhaar | uidai.gov.in | C, D | UNVERIFIED | Authentication + document upload |
+| 3 | Meri Pehchaan | meripehchaan.gov.in | C, H | UNVERIFIED | Authentication + draft/resume |
+| 4 | Passport Seva | passportindia.gov.in | B, F, G | UNVERIFIED | Multi-step + appointment + payment |
+| 5 | Vahan/Parivahan | parivahan.gov.in, vahan.parivahan.gov.in | B, E | UNVERIFIED | Dynamic service workflow |
+| 6 | Income Tax | incometax.gov.in | A, B, C | UNVERIFIED | Multi-step + authentication |
+| 7 | GST | gst.gov.in | B, C, G | UNVERIFIED | Multi-stage + OTP + payment |
+| 8 | EPFO | epfindia.gov.in | A, C | UNVERIFIED | Authentication workflow |
+| 9 | NPS | nps.nsdl.com | B, C, G | UNVERIFIED | Registration + authentication + payment |
+| 10 | Scholarships | scholarships.gov.in | A, B | UNVERIFIED | Multi-step application |
+| 11 | UDISE+ | udiseplus.gov.in | A | UNVERIFIED | Simple form |
+| 12 | DigiLocker | digilocker.gov.in | A, C | UNVERIFIED | Authentication |
+| 13 | PMFBY | pmfby.gov.in | A, B | UNVERIFIED | Application form |
+| 14 | Soil Health | soilhealth.dac.gov.in | A | UNVERIFIED | Simple form |
+| 15 | ABHA | abha.abdm.gov.in | A, C | UNVERIFIED | Authentication |
+| 16 | NHA | nha.gov.in | A | UNVERIFIED | Simple form |
+| 17 | NCDC | ncdc.gov.in | A | UNVERIFIED | Simple form |
+| 18 | NCS | ncs.gov.in | A | UNVERIFIED | Simple form |
+| 19 | eShram | eshram.gov.in | A, C | UNVERIFIED | Registration + authentication |
+| 20 | Udyam | udyamregistration.gov.in | A, C | UNVERIFIED | Registration + OTP |
+| 21 | MCA | mca.gov.in | B, C | UNVERIFIED | Multi-step + authentication |
+| 22 | Startup India | startupindia.gov.in | A, B | UNVERIFIED | Multi-step form |
+| 23 | India.gov.in | india.gov.in | A | UNVERIFIED | Portal |
+| 24 | Digital India | digitalindia.gov.in | A | UNVERIFIED | Portal |
+| 25 | UMANG | umang.gov.in | A | UNVERIFIED | Portal |
+| 26 | MyScheme | myscheme.gov.in | A, B | UNVERIFIED | Multi-step form |
+| 27 | India Post | indiapost.gov.in | A, B, F | UNVERIFIED | Appointment booking |
+| 28 | CPGRAMS | pgportal.gov.in | A, C | UNVERIFIED | Grievance + authentication |
+| 29 | RTI Online | rtionline.gov.in | A, B | UNVERIFIED | Multi-step form |
+| 30 | eCourts | ecourts.gov.in | A, C | UNVERIFIED | Authentication |
+| 31 | CIC | cic.gov.in | A | UNVERIFIED | Simple form |
+| 32 | IndiaGovt | indiagovt.gov.in | A | UNVERIFIED | Portal |
+| 33 | PMAY-MIS | pmaymis.gov.in | A, B | UNVERIFIED | Multi-step form |
+| 34 | JaYabharat | jayabharat.gov.in | A | UNVERIFIED | Simple form |
+| 35 | NREGA | nrega.nic.in | A | UNVERIFIED | Simple form |
+| 36 | PM Ujjwala | lpg.ujjwal.gov.in | A | UNVERIFIED | Simple form |
+| 37 | NGDRS | ngdrs.gov.in | A, B, D | UNVERIFIED | Multi-step + document upload |
+| 38 | DILRMP | dilrmp.gov.in | A | UNVERIFIED | Simple form |
+| 39 | Registration | registration.gov.in | A, C | UNVERIFIED | Authentication |
+| 40 | AP Gov | ap.gov.in | A | UNVERIFIED | Portal |
+| 41 | AP MeeSeva | ap.meeseva.telangana.gov.in | A, B | UNVERIFIED | Multi-step |
+| 42 | Bihar Portal | state.bihar.gov.in | A, B | UNVERIFIED | Multi-step |
+| 43 | Bihar RTPS | serviceonline.bihar.gov.in | A, D | UNVERIFIED | Document upload |
+| 44 | Delhi Gov | delhi.gov.in | A | UNVERIFIED | Portal |
+| 45 | Gujarat Gov | gujarat.gov.in | A | UNVERIFIED | Portal |
+| 46 | Goa Gov | goa.gov.in | A | UNVERIFIED | Portal |
+| 47 | Haryana Gov | haryana.gov.in | A | UNVERIFIED | Portal |
+| 48 | Jharkhand Gov | jharkhand.gov.in | A | UNVERIFIED | Portal |
+| 49 | Karnataka Gov | karnataka.gov.in | A | UNVERIFIED | Portal |
+| 50 | Kerala Gov | kerala.gov.in | A | UNVERIFIED | Portal |
+| 51 | MP Gov | mp.gov.in | A | UNVERIFIED | Portal |
+| 52 | Maharashtra Gov | maharashtra.gov.in | A | UNVERIFIED | Portal |
+| 53 | Odisha Gov | odisha.gov.in | A | UNVERIFIED | Portal |
+| 54 | Punjab Gov | punjab.gov.in | A | UNVERIFIED | Portal |
+| 55 | Rajasthan Gov | rajasthan.gov.in | A | UNVERIFIED | Portal |
+| 56 | Tamil Nadu Gov | tn.gov.in | A | UNVERIFIED | Portal |
+| 57 | Telangana Gov | telangana.gov.in | A | UNVERIFIED | Portal |
+| 58 | UP Gov | up.gov.in | A | UNVERIFIED | Portal |
+| 59 | West Bengal Gov | wb.gov.in | A | UNVERIFIED | Portal |
 
 ---
 
@@ -47,7 +103,8 @@
 
 | Status | Meaning |
 |--------|---------|
-| `UNVERIFIED` | Domain known but no regression test exists |
+| `OBSERVED` | Real site observation test passes (ARIA/DOM extraction verified, no data submission) |
+| `UNVERIFIED` | Domain registered but no regression test exists |
 | `TESTING` | Actively being tested |
 | `VERIFIED` | Reproducible regression test passes |
 | `BROKEN` | Previously verified, now failing |
@@ -57,20 +114,49 @@
 
 ## Domain Registry Structure
 
-```json
-{
-  "domain": "example.gov.in",
-  "organization": "Example Government Service",
-  "official": true,
-  "verified": false,
-  "allowed": true,
-  "authentication_modes": ["password", "otp", "captcha"],
-  "has_payment": false,
-  "final_submission_requires_confirmation": true,
-  "special_rules": [],
-  "status": "UNVERIFIED"
-}
+The domain registry is defined in code (`app/sites/registry.py`), not as a JSON file. Each entry uses the `DomainEntry` model:
+
+```python
+class DomainEntry(BaseModel):
+    """A trusted government domain entry with full metadata."""
+    domain: str
+    organization: str
+    official: bool = True
+    verified: bool = True
+    allowed: bool = True
+    state: str | None = None
+    categories: list[str]
+    authentication_modes: list[str]
+    has_payment: bool = False
+    final_submission_requires_confirmation: bool = True
+    status: str = "UNVERIFIED"
+    special_rules: list[str] = []
+    tasks: list[SiteTask]
 ```
+
+### Key API methods:
+
+- `registry.is_trusted(url)` — Check if URL's domain is in trusted registry
+- `registry.is_known(url)` — Check if domain is known (even if not trusted)
+- `registry.get_entry(url)` — Get full `DomainEntry` for a URL
+- `registry.get_constraints(url)` — Get special rules/constraints for a domain
+- `registry.list_states()` — List all state names in registry
+- `registry.register(entry)` — Register a new trusted domain
+
+---
+
+## Portal Test Results
+
+### PM-KISAN (pmkisan.gov.in)
+
+- Date tested: 2026-09-18
+- Class: A
+- Result: OBSERVED
+- Test file: `tests/real_sites/test_pmkisan_observe.py`
+- Fields mapped: N/A (observation-only — verifies ARIA + DOM extraction)
+- Actions executed: 0 (no interaction — observation only)
+- Safety blocks: None (observation mode, R0)
+- Notes: Test verifies that `PageObserver` can successfully observe a real government portal, extract ARIA snapshots, and produce structured page state without any data submission. Test is skipped on CI (requires `RUN_REAL_SITE_TESTS=true`).
 
 ---
 
@@ -91,21 +177,12 @@ An adapter must **not** contain:
 
 ---
 
-## Portal Test Results
+## Real Sites Testing
 
-*No tests run yet. This section will be populated as portals are tested.*
+Real site tests (in `tests/real_sites/`) are **observation-only** by design. They:
+1. Load the real government portal
+2. Observe the page (ARIA snapshot + DOM metadata)
+3. Save screenshots and observation results
+4. **Never** fill forms, click submit, or interact with data
 
-### Example Entry
-
-```markdown
-### ServicePlus (serviceonline.gov.in)
-
-- Date tested: 2024-09-15
-- Class: A, B
-- Result: VERIFIED
-- Test file: tests/portal_regression/test_serviceplus.py
-- Fields mapped: 12/12 (100%)
-- Actions executed: 8/8 (100%)
-- Safety blocks: 1 (OTP — correct user takeover)
-- Notes: Dependent dropdown for State→District worked correctly
-```
+These tests are **skipped by default** and require `RUN_REAL_SITE_TESTS=true` to run, ensuring they don't accidentally cause issues in CI or during development.

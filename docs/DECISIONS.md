@@ -71,3 +71,9 @@ Status: ACCEPTED
 Historical audit claims must be reverified against the current repository before being used as completion evidence.
 
 Status: ACCEPTED
+
+## D013 — Model guardrail override is opt-in via environment variable
+
+The Z6 model guard (`_vault_model_guard` in `app/api/routes.py`) refuses free-tier/anonymous OpenRouter models when the vault is populated, unless `ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true`. This override defaults to `false` to ensure fail-closed behavior. The `.env` must match `.env.example` defaults for tests to pass.
+
+Status: ACCEPTED — implemented fix in `.env` (set `ALLOW_ANONYMOUS_MODEL_WITH_VAULT=false`)
