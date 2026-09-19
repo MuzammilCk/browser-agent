@@ -1,8 +1,8 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-19
-Current phase: Phase 5 — Goal / Plan / Subgoal (COMPLETE — deterministic strategic layer above the Phase 4 loop; exit criterion proven on a dynamic-form scenario)
-Overall: IN PROGRESS (Phases 0–5 complete)
+Current phase: Phase 6 — WorldState (COMPLETE — durable semantic world state independent from ephemeral DOM refs; exit criterion proven on dynamic-form and multi-tab scenarios)
+Overall: IN PROGRESS (Phases 0–6 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 5, 2026-09-19): **680 tests passing** (581 unit + 59 integration + 40 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 6, 2026-09-19): **696 tests passing** (595 unit + 59 integration + 42 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -463,6 +463,178 @@ Ten required proofs (tests/unit/test_agent_strategy.py):
 9. invalid plans rejected — TestInvalidPlansRejected
 10. serialization round-trip — TestSerialization
 
+## Phase 6 evidence
+
+Implemented (additive, `app/agent/world/*` + integration in `Snapshot`):
+
+- `app/agent/world/models.py` — `AgentWorldState` (durable semantic workflow state,
+  versioned, tracks tabs, semantic fields, mappings, verified values, validation
+  errors, auth challenge state, document state, completed subgoals, unresolved
+  questions, and immutable provenance log), `EpistemicStatus` (OBSERVED, INFERRED,
+  VERIFIED, STALE), `Provenance` (audit record with source, observation id, tool
+  name, target ref, semantic id, state version, timestamp, details), `SemanticField`
+  (durable semantic field with stable `semantic_id`, binding, options, verified value,
+  and ephemeral `current_ref` scoped to `current_observation_id`), `TabWorldState`
+  (per-tab semantic state), `DocumentWorldState`, `AuthenticationWorldState`.
+- `app/agent/world/semantic_id.py` — deterministic `compute_semantic_id` (normalizes
+  HTML name, accessible name, label, section context, and input type into stable
+  slugs like `field:state`, `field:district`, `field:fullname` with deterministic
+  collision resolution).
+- `app/agent/world/reducer.py` — `reduce_observation` (detects observation changes,
+  invalidates stale DOM refs, matches elements by semantic ID, introduces dynamic
+  fields without losing existing state, preserves verified values across DOM rerenders
+  and blankings, tracks tabs, updates validation errors, records provenance, and
+  increments state version monotonically), `record_verified_action` (promotes fields
+  to VERIFIED status, stores verified values, records provenance), `record_tool_result`
+  (handles mutating tool verification and immediate post-observation reduction),
+  `is_target_ref_valid` (validates target ref against current observation, tab index,
+  and optional expected semantic ID — fails closed on stale refs).
+- `app/agent/strategy/criteria.py` — `Snapshot.from_world_state` (projection from
+  `AgentWorldState` into `Snapshot` for criteria evaluation, 100% backward compatible).
+
+### Phase 6 test counts (verified at current HEAD, 2026-09-19)
+
+~~~
+pytest tests/unit/test_agent_world_state.py -q
+→ 14 passed in 0.36s
+
+pytest tests/synthetic_forms/test_world_state_loop.py -q
+→ 2 passed in 62.03s (real Chromium)
+
+pytest tests/unit/ -q
+→ 595 passed in 17.79s
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 696 passed (595 unit + 59 integration + 42 synthetic)
+~~~
+
+### Phase 6 exit criterion
+
+"DOM rerenders do not erase verified semantic progress":
+verified by `tests/synthetic_forms/test_world_state_loop.py::TestDynamicFormContinuity::test_dynamic_district_dropdown_appearance_preserves_state`
+and `tests/synthetic_forms/test_world_state_loop.py::TestMultiTabContinuity::test_tab_switching_preserves_verified_progress`
+— real Chromium:
+1. Dynamic-form scenario (`dropdowns.html`): state selection is verified in `AgentWorldState`
+   (`field:state` = "kerala", status=VERIFIED); the page re-renders revealing the dependent
+   district field; the reducer updates `AgentWorldState`: previous verified state value is
+   100% intact, new `field:district` is introduced with status OBSERVED, old DOM refs are
+   invalidated, and subsequent actions target new observation refs. District selection is
+   subsequently executed and verified (`field:district` = "ernakulam", status=VERIFIED),
+   followed by block field appearance with all previous verified progress preserved.
+2. Multi-tab scenario (`simple.html` + `portal_subportal.html`): Tab A has verified
+   progress (`field:fullname` = "Priya Sharma"); Tab B opens; both tabs are tracked in
+   `AgentWorldState.tabs`; active tab switches to Tab B; Tab A state is preserved; actions
+   against stale Tab A refs while on Tab B are rejected; Tab B field is filled and verified;
+   switching back to Tab A restores semantic continuity with all verified facts intact.
+
+Ten required unit proofs (tests/unit/test_agent_world_state.py):
+
+1. observation reduces into WorldState — TestObservationReduction
+2. verified facts survive DOM rerender — TestVerifiedFactsSurviveRerender
+3. stale refs are invalidated — TestStaleRefInvalidation
+4. dynamic fields appear without losing existing state — TestDynamicFieldContinuity
+5. tab switching preserves state — TestTabSwitchingPreservesState
+6. semantic state can be serialized/deserialized — TestSerializationRoundTrip
+7. evidence provenance survives serialization — TestProvenanceIntegrity
+8. conflicting observations do not silently overwrite verified facts — TestEpistemicIntegrity
+9. unverified/inferred data cannot masquerade as verified data — TestNoUnverifiedMasquerade
+10. WorldState version increments deterministically — TestDeterministicVersioning
+
+## Phase 7 evidence
+
+Implemented (additive, `app/agent/recovery/*`):
+
+- `app/agent/recovery/models.py` — canonical 13-type `FailureType` enum (`TARGET_NOT_FOUND`,
+  `AMBIGUOUS_FIELD`, `INVALID_OPTION`, `VALIDATION_FAILURE`, `STALE_REFERENCE`,
+  `PAGE_CHANGED`, `NAVIGATION_FAILURE`, `AUTHENTICATION_REQUIRED`, `PROMPT_INJECTION`,
+  `TOOL_FAILURE`, `MODEL_FAILURE`, `TIMEOUT`, `POLICY_DENIED`), `RecoveryStrategy`
+  (`RETRY_WITH_FRESH_TARGET`, `REOBSERVE_AND_RETRY`, `REVISE_INPUT_AND_RETRY`,
+  `REPLAN_SUBGOAL`, `REQUEST_USER_INTERACTION`, `REQUEST_CLARIFICATION`,
+  `FAIL_CLOSED`, `TERMINAL_FAILURE`), `FailureEvidence` (verifiable failure details,
+  selector, semantic_id, status_code, message), `FailureClassification` (failure type,
+  source step/action, evidence, recoverable flag), `RecoveryBudget` (bounded attempts
+  per type, per subgoal, and overall run budget), `RecoveryDecision` (next recommended
+  strategy, suggested fresh target, modified args, clarification prompt, can_retry,
+  user_action_required, fail_closed), `ReflectionResult` (bounded reflection outcome,
+  verdict, reasoning summary, recovery decision), and `RecoveryAttemptRecord`
+  (immutable audit trail with failure type, evidence, strategy, attempt count, resulting
+  ToolResult, and WorldState delta).
+- `app/agent/recovery/classifier.py` — deterministic `FailureClassifier` classifying
+  `ToolResult` failures (stale refs, targets not found, ambiguity, validation failures,
+  navigation errors, timeouts, prompt injection, policy denial), model failures
+  from `ReasoningOutcome`, and execution stalls from `StallDetector`.
+- `app/agent/recovery/reflector.py` — `RecoveryReflector` analyzing failures and
+  recommending recovery strategies without executing browser mutations:
+  - Fails closed on `PROMPT_INJECTION` (zero retry, halts execution).
+  - Surfaces `POLICY_DENIED` without automated retry.
+  - Flags `AUTHENTICATION_REQUIRED` for human interaction, never bypassing auth.
+  - Refuses to guess on `AMBIGUOUS_FIELD` and `TARGET_NOT_FOUND` (requests clarification
+    or halts safely).
+  - Enforces `RecoveryBudget` caps across failure types, subgoals, and runs.
+- `app/agent/recovery/manager.py` — `RecoveryManager` tracking attempt records,
+  enforcing bounded recovery, managing budgets, deriving fresh typed tool calls via
+  `AgentWorldState` semantic resolution on stale refs, and ensuring reflection
+  cannot bypass `ToolRegistry` or `PolicyEngine`.
+
+### Phase 7 test counts (verified at current HEAD, 2026-09-19)
+
+~~~
+pytest tests/unit/test_agent_recovery.py -q
+→ 15 passed in 0.44s
+
+pytest tests/synthetic_forms/test_recovery_loop.py -q
+→ 1 passed in 1.21s (real Chromium)
+
+pytest tests/unit/ -q
+→ 610 passed in 15.01s (595 Phase 6 baseline + 15 new recovery unit tests)
+
+pytest tests/integration/ -q
+→ 59 passed in 37.54s
+
+pytest tests/synthetic_forms/ -q
+→ 43 passed in 171.63s (42 Phase 6 baseline + 1 new recovery loop test)
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 712 passed (610 unit + 59 integration + 43 synthetic, 0 failures)
+~~~
+
+### Phase 7 exit criterion
+
+"The agent changes strategy after meaningful failures and stops when no safe strategy remains":
+verified by `tests/synthetic_forms/test_recovery_loop.py::TestRecoveryLoop::test_stale_target_recovery_preserves_verified_progress`
+— real Chromium + dynamic synthetic form (`tests/synthetic_forms/pages/dynamic_recovery.html`):
+1. Agent observes dynamic form with Personal Details (fullname, email).
+2. Agent performs valid fill on `field:fullname` ("Asha Kumar"), verified in `AgentWorldState`.
+3. Page layout mutates dynamically (stage 2 layout triggers: layout wrapper changes, PIN code and city inputs appear, DOM refs shift and previous PIN ref `e2` is invalidated).
+4. Tool execution attempted on stale ref fails with `STALE_REFERENCE`.
+5. `FailureClassifier` classifies the failure into canonical `FailureType.STALE_REFERENCE`.
+6. `RecoveryReflector` reflects on the failure, verifies budget, and recommends `RETRY_WITH_FRESH_TARGET`.
+7. Runtime triggers re-observation of the mutated page.
+8. `AgentWorldState` reducer reduces the fresh observation, invalidates old refs, and binds `field:pincode` to its fresh ref `e5`.
+9. `RecoveryManager` derives a fresh typed `fill` tool call targeting `e5`.
+10. `BrowserExecutor` executes the fresh tool call via `PolicyEngine` and `ToolRegistry`.
+11. Verification succeeds for `field:pincode` ("682001").
+12. Verified semantic progress is completely preserved in `AgentWorldState` (both `field:fullname` and `field:pincode` remain VERIFIED).
+13. Complete `RecoveryAttemptRecord` is recorded in recovery history with failure type, evidence, strategy, and resulting state delta.
+
+Fifteen required unit proofs (tests/unit/test_agent_recovery.py):
+
+1. stale reference → re-observe → fresh ref → successful recovery (TestRecoveryWorkflow)
+2. missing target → re-observe → target found (TestTargetNotFoundRecovery)
+3. ambiguous field → no guessing (TestAmbiguousFieldNoGuessing)
+4. validation failure → corrected input → success (TestValidationFailureRecovery)
+5. dynamic page change → affected subgoal invalidated → recovery (TestDynamicPageChangeRecovery)
+6. navigation failure → bounded retry (TestNavigationFailureBoundedRetry)
+7. policy denial → no retry (TestPolicyDenialNoRetry)
+8. prompt injection → fail closed (TestPromptInjectionFailClosed)
+9. model failure → explicit MODEL_FAILURE (TestModelFailureRecovery)
+10. repeated identical action → stall detected (TestRepeatedActionStallRecovery)
+11. recovery budget exhausted → terminal failure (TestRecoveryBudgetExhaustion)
+12. successful recovery preserves WorldState verified facts (TestRecoveryPreservesVerifiedFacts)
+13. reflection cannot execute tools directly (TestReflectionCannotExecuteToolsDirectly)
+14. recovery cannot bypass ToolRegistry (TestRecoveryCannotBypassToolRegistry)
+15. recovery cannot bypass PolicyEngine (TestRecoveryCannotBypassPolicyEngine)
+
 ## Phase tracker
 
 | Phase | Status |
@@ -473,8 +645,8 @@ Ten required proofs (tests/unit/test_agent_strategy.py):
 | 3 Tool Registry | COMPLETE (typed registry + adapters; LLM loop is Phase 4) |
 | 4 OpenRouter agent loop | COMPLETE (mock-model loop proven; real OpenRouterDecisionModel behind the same DecisionModel contract; live-key smoke test outstanding) |
 | 5 Goal/Subgoal | COMPLETE (deterministic strategic layer; exit criterion proven on dynamic-form scenario) |
-| 6 WorldState | NOT STARTED |
-| 7 Reflection/Recovery | NOT STARTED |
+| 6 WorldState | COMPLETE (durable semantic state, epistemic hierarchy, multi-tab & dynamic-form continuity; exit criterion proven) |
+| 7 Reflection/Recovery | COMPLETE (bounded reflection, canonical 13-failure taxonomy, stale-target & dynamic recovery; exit criterion proven) |
 | 8 Durable HITL | NOT STARTED |
 | 9 Memory | NOT STARTED |
 | 10 Specialist agents | NOT STARTED |

@@ -8,7 +8,9 @@ Phase 2 — AgentSession/AgentRuntime (COMPLETE)
 Phase 3 — Tool Registry (COMPLETE)  
 Phase 4 — OpenRouter agent loop (COMPLETE)  
 Phase 5 — Goal / Plan / Subgoal (COMPLETE)  
-Overall: IN PROGRESS (Phases 0–5 complete; Phase 6 next)  
+Phase 6 — WorldState (COMPLETE)  
+Phase 7 — Reflection/Recovery (COMPLETE)  
+Overall: IN PROGRESS (Phases 0–7 complete; Phase 8 next)  
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -397,16 +399,47 @@ Track:
 
 Tasks:
 
-- [ ] AgentWorldState
-- [ ] observation reducer
-- [ ] semantic IDs
-- [ ] stale-ref invalidation
-- [ ] dynamic form continuity
-- [ ] multi-tab continuity
+- [x] AgentWorldState (app/agent/world/models.py — durable semantic workflow
+      state, tracks portal, page, tabs, semantic fields, field mappings,
+      verified values, validation errors, auth challenge, documents, completed
+      subgoals, unresolved questions, monotonic version, immutable provenance log)
+- [x] observation reducer (app/agent/world/reducer.py — reduce_observation,
+      record_verified_action, record_tool_result; epistemic hierarchy
+      VERIFIED > OBSERVED > INFERRED > STALE; verified facts survive DOM rerenders)
+- [x] semantic IDs (app/agent/world/semantic_id.py — compute_semantic_id stable
+      slugs from HTML name, accessible name, label, section context, and type)
+- [x] stale-ref invalidation (app/agent/world/reducer.py — is_target_ref_valid;
+      ephemeral DOM refs invalidated when observation changes or elements disappear;
+      actions targeting stale refs fail closed)
+- [x] dynamic form continuity (tests/synthetic_forms/test_world_state_loop.py::
+      TestDynamicFormContinuity — state selection verified, dependent district field
+      appears, state verified fact preserved, district introduced with status OBSERVED)
+- [x] multi-tab continuity (tests/synthetic_forms/test_world_state_loop.py::
+      TestMultiTabContinuity — tabs tracked in TabWorldState, active tab changes
+      preserve inactive tab state, actions on stale tab refs rejected, switching back
+      restores semantic continuity)
 
 Exit:
 
 DOM rerenders do not erase verified semantic progress.
+
+Evidence (verified at current HEAD, 2026-09-19):
+tests/synthetic_forms/test_world_state_loop.py (2 passed in 62.03s, real Chromium):
+1. TestDynamicFormContinuity::test_dynamic_district_dropdown_appearance_preserves_state:
+   State selection verified on dropdowns.html (field:state = "kerala", status=VERIFIED);
+   page re-renders with dependent district dropdown; reducer updates WorldState:
+   state verified value remains intact, district added with status OBSERVED, old DOM
+   refs invalidated, new refs actionable; district selected and verified
+   (field:district = "ernakulam", status=VERIFIED); block field appears with all
+   prior progress intact.
+2. TestMultiTabContinuity::test_tab_switching_preserves_verified_progress:
+   Tab A verified progress (field:fullname = "Priya Sharma"); Tab B opens; both
+   tabs tracked in WorldState; active tab switches to Tab B; Tab A state preserved;
+   actions on stale Tab A refs while on Tab B rejected; Tab B field filled and
+   verified; switching back to Tab A restores semantic continuity with all verified
+   facts intact.
+Phase 6 unit tests: 14 passed in tests/unit/test_agent_world_state.py.
+Full regression suite: 696 passed, 0 failed (595 unit + 59 integration + 42 synthetic).
 
 ---
 
@@ -432,18 +465,45 @@ Failure taxonomy:
 
 Tasks:
 
-- [ ] ReflectionResult
-- [ ] bounded reflection
-- [ ] stale-target recovery
-- [ ] validation recovery
-- [ ] navigation recovery
-- [ ] model-failure recovery
-- [ ] repeated-action integration
-- [ ] recovery tests
+- [x] ReflectionResult (app/agent/recovery/models.py — ReflectionResult, RecoveryDecision,
+      FailureEvidence, FailureClassification, RecoveryBudget, RecoveryAttemptRecord,
+      canonical 13-type FailureType enum, RecoveryStrategy enum)
+- [x] bounded reflection (app/agent/recovery/reflector.py — RecoveryReflector; evaluates
+      failure evidence and recommends next strategy; cannot execute browser tools directly;
+      enforces per-type, per-subgoal, and total run budgets; fails closed on injection and policy denial)
+- [x] stale-target recovery (app/agent/recovery/manager.py — RecoveryManager; on STALE_REFERENCE,
+      triggers re-observation, re-resolves durable semantic_id in AgentWorldState, and derives
+      fresh typed ToolCall targeting updated observation ref; fails safely if ambiguous)
+- [x] validation recovery (app/agent/recovery/reflector.py + classifier.py — detects VALIDATION_FAILURE
+      from tool result or page state; recommends REVISE_INPUT_AND_RETRY with modified arguments within budget)
+- [x] navigation recovery (app/agent/recovery/reflector.py + classifier.py — classifies NAVIGATION_FAILURE,
+      authorizes bounded retry, and terminates with TERMINAL_FAILURE if unrecoverable)
+- [x] model-failure recovery (app/agent/recovery/reflector.py + classifier.py — explicit MODEL_FAILURE
+      classification from ReasoningOutcome; bounded retry without fabricating fallback decisions)
+- [x] repeated-action integration (app/agent/recovery/classifier.py — classifies StallDetector stall
+      verdicts into TOOL_FAILURE / STALE_REFERENCE, stopping repeated loops and forcing replanning)
+- [x] recovery tests (tests/unit/test_agent_recovery.py: 15 unit tests covering all required recovery
+      behaviors, fail-closed boundaries, and budget enforcement; tests/synthetic_forms/test_recovery_loop.py:
+      full loop acceptance in real Chromium with dynamic layout mutation)
 
 Exit:
 
 The agent changes strategy after meaningful failures and stops when no safe strategy remains.
+
+Evidence (verified at current HEAD, 2026-09-19):
+tests/synthetic_forms/test_recovery_loop.py::
+TestRecoveryLoop::test_stale_target_recovery_preserves_verified_progress —
+real Chromium + dynamic synthetic form (tests/synthetic_forms/pages/dynamic_recovery.html):
+Personal details (fullname = "Asha Kumar") filled and verified in AgentWorldState;
+page dynamically mutates into stage 2 layout, invalidating previous PIN code ref `e2`;
+subsequent fill on stale ref produces STALE_REFERENCE;
+FailureClassifier classifies the failure; RecoveryReflector confirms recovery budget and recommends
+RETRY_WITH_FRESH_TARGET; runtime re-observes; AgentWorldState reduces fresh observation and binds
+field:pincode to fresh ref `e5`; RecoveryManager derives fresh typed tool call targeting `e5`;
+BrowserExecutor executes it through ToolRegistry and PolicyEngine; verification succeeds;
+verified semantic progress remains 100% intact; complete RecoveryAttemptRecord is recorded in audit log.
+Phase 7 tests: 15 unit + 1 synthetic.
+Full regression suite: 712 passed, 0 failed (610 unit + 59 integration + 43 synthetic).
 
 ---
 

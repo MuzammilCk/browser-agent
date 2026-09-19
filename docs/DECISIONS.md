@@ -231,3 +231,82 @@ Phase 5 (2026-09-19):
 Status: ACCEPTED — implemented in `app/agent/strategy/*`, covered by
 `tests/unit/test_agent_strategy.py` (42) and
 `tests/synthetic_forms/test_strategy_loop.py` (1, real Chromium).
+
+## D018 — Semantic WorldState is durable reality; DOM refs are ephemeral handles
+
+Phase 6 (2026-09-19):
+
+1. Ephemeral vs Durable Separation: DOM element references (`ref: 'e12'`)
+   belong strictly to a single PageObservation and are never treated as
+   durable truth. WorldState stores durable `SemanticField` instances
+   indexed by stable semantic IDs (`field:state`, `field:district`, etc.)
+   derived from HTML name, accessible name, label, section context, and
+   user bindings.
+2. Epistemic Hierarchy: `VERIFIED > OBSERVED > INFERRED > STALE`.
+   A lower-trust observation or model statement can NEVER silently
+   overwrite or erase a verified fact. Verified values survive DOM
+   re-renders and blankings.
+3. Stale-Reference Invalidation: When observation changes, prior
+   ephemeral DOM refs are invalidated (`current_ref = None` or updated
+   to the fresh observation's ref). Actions attempting to target stale
+   refs or refs with wrong observation IDs fail closed (`is_target_ref_valid`).
+4. Multi-Tab Continuity: Browser tabs are explicitly tracked with distinct
+   `TabWorldState`. When the active tab changes, inactive tab state is
+   preserved. Actions targeting inactive tab refs are rejected.
+   Switching back restores semantic continuity.
+5. Deterministic Provenance: Every WorldState mutation increments `version`
+   monotonically and records an immutable `Provenance` audit record with
+   source, observation ID, timestamp, and state version.
+6. Zero Secrets & Zero DOM Tree Duplication: No raw passwords, OTPs, full
+   identity numbers, or document bytes are stored in WorldState; only
+   semantic reference identifiers. WorldState does not store live Playwright
+   objects or duplicate raw PageState DOM trees.
+
+Status: ACCEPTED — implemented in `app/agent/world/*`, covered by
+`tests/unit/test_agent_world_state.py` (14) and
+`tests/synthetic_forms/test_world_state_loop.py` (2, real Chromium).
+
+## D019 — Bounded reflection, failure taxonomy, and recovery loop
+
+Phase 7 (2026-09-19):
+
+1. Non-Mutating Reflection: Reflection (`RecoveryReflector`) evaluates failures
+   and recommends recovery strategies (`ReflectionResult`, `RecoveryDecision`).
+   Critically, reflection NEVER executes browser actions directly and NEVER
+   bypasses `ToolRegistry` or `PolicyEngine`. Browser mutations remain the
+   exclusive responsibility of the authorized execution pipeline.
+2. Canonical 13-Type Failure Taxonomy: All execution failures, reasoning anomalies,
+   and execution stalls are classified by `FailureClassifier` into canonical
+   `FailureType`s (`TARGET_NOT_FOUND`, `AMBIGUOUS_FIELD`, `INVALID_OPTION`,
+   `VALIDATION_FAILURE`, `STALE_REFERENCE`, `PAGE_CHANGED`, `NAVIGATION_FAILURE`,
+   `AUTHENTICATION_REQUIRED`, `PROMPT_INJECTION`, `TOOL_FAILURE`, `MODEL_FAILURE`,
+   `TIMEOUT`, `POLICY_DENIED`).
+3. Fail-Closed Security & Policy Boundaries: Security violations and policy denials
+   are non-recoverable via automated tool retry:
+   - `PROMPT_INJECTION` fails closed immediately (`fail_closed = True`, no retry).
+     Page instructions cannot alter tool permissions or policy.
+   - `POLICY_DENIED` surfaces denial directly to the runtime (`can_retry = False`);
+     no automated retry is permitted.
+   - `AUTHENTICATION_REQUIRED` halts automated execution (`user_action_required = True`),
+     demanding human handover without bypassing authentication.
+4. Ambiguity Beats Guessing: When encountering `AMBIGUOUS_FIELD` or `TARGET_NOT_FOUND`
+   without a clear semantic match, the reflector refuses to guess and signals
+   `request_clarification` or terminates the action.
+5. Strictly Bounded Recovery: Recovery is bounded on three levels (`RecoveryBudget`):
+   per-failure-type budget (default 2), per-subgoal budget (default 3), and total
+   run budget (default 10). When a budget is exhausted, recovery terminates with
+   `RecoveryStrategy.TERMINAL_FAILURE`.
+6. Stale Target & Semantic Healing: On `STALE_REFERENCE` or `PAGE_CHANGED`,
+   the runtime triggers re-observation. The `RecoveryManager` attempts to re-resolve
+   the durable `semantic_id` in `AgentWorldState` to obtain a fresh observation ref.
+   If target identity remains unambiguous, a fresh typed `ToolCall` is synthesized;
+   if ambiguous or missing, it halts safely.
+7. Verifiable Audit Trail: Every recovery attempt records an immutable
+   `RecoveryAttemptRecord` tracking failure type, triggering evidence, strategy,
+   attempt count, resulting tool result, and WorldState delta. Verified facts
+   in `AgentWorldState` are never overwritten by failed or unverified recovery outcomes.
+
+Status: ACCEPTED — implemented in `app/agent/recovery/*`, covered by
+`tests/unit/test_agent_recovery.py` (15) and
+`tests/synthetic_forms/test_recovery_loop.py` (1, real Chromium).
+

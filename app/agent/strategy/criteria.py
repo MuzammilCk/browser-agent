@@ -55,6 +55,28 @@ class Snapshot:
             ),
         )
 
+    @classmethod
+    def from_world_state(
+        cls,
+        world_state: Any,
+    ) -> Snapshot:
+        """Construct Snapshot from an AgentWorldState (Phase 6)."""
+        # Create a lightweight WorkflowState adapter containing verified bindings
+        wf = WorkflowState(
+            workflow_id=world_state.portal,
+            domain=world_state.portal,
+            current_url=world_state.current_page_url,
+            current_page_type=world_state.current_page_type,
+            current_observation_id=world_state.current_observation_id,
+            completed_bindings=list(world_state.verified_values.keys()),
+        )
+        return cls(
+            workflow=wf,
+            current_url=world_state.current_page_url,
+            page_type=world_state.current_page_type,
+            validation_errors=list(world_state.validation_errors),
+        )
+
 
 @dataclass(frozen=True)
 class CriterionOutcome:

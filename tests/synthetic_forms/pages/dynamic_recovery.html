@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Form Recovery Test</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+        input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <h1>Dynamic Form Recovery Test</h1>
+    <form id="recoveryForm">
+        <!-- Stable primary field -->
+        <div class="form-group">
+            <label for="applicant_name">Applicant Full Name</label>
+            <input type="text" id="applicant_name" name="applicant_name">
+        </div>
+
+        <!-- Dynamic section: re-rendered on button click -->
+        <div id="dynamic_section">
+            <div class="form-group" id="pincode_wrapper">
+                <label for="pincode">Area Pincode</label>
+                <input type="text" id="pincode" name="pincode">
+            </div>
+        </div>
+
+        <button type="button" id="btn_rerender" onclick="rerenderSection()">Re-render Layout</button>
+    </form>
+
+    <script>
+        function rerenderSection() {
+            // Replaces the DOM nodes completely and introduces locality before pincode
+            const container = document.getElementById('dynamic_section');
+            container.innerHTML = `
+                <div class="form-group" id="locality_wrapper">
+                    <label for="locality">Locality / Landmark</label>
+                    <input type="text" id="locality" name="locality">
+                </div>
+                <div class="form-group" id="pincode_wrapper_v2">
+                    <label for="pincode_v2">Area Pincode</label>
+                    <input type="text" id="pincode_v2" name="pincode" class="updated-layout">
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
