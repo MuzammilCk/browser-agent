@@ -1,8 +1,8 @@
 # BUILD STATUS
 
-Last reconciled: 2026-09-18
-Current phase: Phase 1 — Stabilize browser foundation (COMPLETE)
-Overall: IN PROGRESS (Phase 0 + Phase 1 complete)
+Last reconciled: 2026-09-19
+Current phase: Phase 2 — AgentSession and AgentRuntime (deterministic core COMPLETE)
+Overall: IN PROGRESS (Phase 0 + Phase 1 + Phase 2 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline: **506 tests passing** (416 unit + 19 synthetic + 65 integration + 6 real_sites). 0 tests failing. 2 tests were previously failing due to `.env` misconfiguration (ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true was defeating the model guardrail) — fixed by setting it to false.
+Current reproducible test baseline (verified with Phase 2, 2026-09-19): **554 tests passing** (464 unit + 59 integration + 31 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -43,6 +43,9 @@ Current reproducible test baseline: **506 tests passing** (416 unit + 19 synthet
 pytest tests/unit/ tests/integration/ tests/synthetic_forms/ tests/real_sites/ -q
 → 506 passed in 188.5s
 ```
+
+(Phase 1-time count. Superseded at current HEAD by the 554-test baseline above;
+`real_sites/` now collects 0 pytest tests.)
 
 ### Previously failing tests (now fixed)
 | Test File | Failing Tests | Root Cause | Fix Applied |
@@ -103,13 +106,92 @@ Validated via `tests/synthetic_forms/` (31 tests, all passing):
 | Multi-tab tests | ✅ Done | tests/integration/test_multi_tab.py |
 | No swallowed browser errors | ✅ Done | tests/integration/test_browser_errors.py |
 
+## Phase 2 evidence
+
+Implemented (all additive, no existing file modified):
+
+- `app/agent/runtime/state.py` — `AgentLifecycle` (12 required states), explicit
+  `LIFECYCLE_TRANSITIONS` table, `AgentRunState` (run id, goal, plan, current
+  subgoal, WorldState handle, memory handles, browser handle, pending interrupt,
+  lifecycle, iteration, usage counters, timestamps, parent/child agent metadata)
+- `app/agent/runtime/events.py` — frozen `AgentEvent`, append-only `AgentEventLog`
+  with monotonic sequence + ordered replay
+- `app/agent/runtime/decision.py` — `AgentDecision` / `AgentDecisionType`
+  (TOOL_CALL/REPLAN/REFLECT/ASK_USER/COMPLETE; HANDOFF reserved for Phase 10),
+  schema-validated, embeds `BrowserAction` (no LLM loop — Phase 4)
+- `app/agent/runtime/checkpoint.py` — `AgentCheckpoint` (state + full event log,
+  format-versioned), `CheckpointStore` protocol, `InMemoryCheckpointStore`
+  (SQLite deferred to Phase 8 by plan)
+- `app/agent/runtime/session.py` — `AgentSession` (serializable run registry +
+  active-run pointer)
+- `app/agent/runtime/runtime.py` — deterministic `AgentRuntime`: validated
+  transitions (illegal = raised, never coerced), `transition_toward` BFS for
+  multi-hop workflow-status changes, durable interrupts (raise/resolve +
+  auto-checkpoint), decision recording, usage counters, checkpoint
+  create/restore incl. cross-runtime JSON restore
+- `app/agent/runtime/facade.py` — `RuntimeBackedAgentRunner(AgentRunner)`: same
+  `run`/`resume` contract, tracks session/run/events, derives lifecycle from
+  `WorkflowStatus`, checkpoints every pause and every terminal state
+
+Serialization format: pydantic v2 `model_dump_json()` (lossless round-trip).
+Checkpoints are self-contained JSON: `{format_version, checkpoint_id, run_id,
+created_at, reason, state, events[]}`.
+
+### Phase 2 test counts (verified at current HEAD, 2026-09-19)
+
+```
+pytest tests/unit/test_agent_runtime.py -q
+→ 48 passed in 0.78s
+
+pytest "tests/unit/test_agent_runtime.py::TestCheckpoints::test_restored_run_preserves_logical_task_state" \
+  "tests/unit/test_agent_runtime.py::TestCheckpoints::test_restored_run_replays_full_event_log" \
+  "tests/unit/test_agent_runtime.py::TestCheckpoints::test_json_round_trip_lossless" -v
+→ 3 passed
+
+pytest tests/unit/ -q
+→ 464 passed in 17.78s
+
+pytest tests/integration/ -q
+→ 59 passed
+
+pytest tests/synthetic_forms/ -q
+→ 31 passed
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 554 passed in 189.62s
+```
+
+An earlier work-in-progress note recorded 463 passed + 1 failed in `tests/unit/`
+(vault-crypto temp-path assertion). At current HEAD that test passes: 464/464
+unit tests are green. No test was masked or weakened.
+
+### Phase 2 exit criterion
+
+A paused run can be serialized and restored without losing logical task state:
+verified by `test_restored_run_preserves_logical_task_state` and
+`test_restored_run_replays_full_event_log` — a run paused at
+READY_FOR_CONFIRMATION (interrupt + workflow state + iteration + subgoal +
+action history intact) exports to JSON, restores into a FRESH `AgentRuntime`,
+and replays the full event log with sequence continuity (+1 `RUN_RESTORED`).
+
+### Phase 2 status
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| Pydantic models | ✅ Done | app/agent/runtime/*.py, 48 tests |
+| Serializable state | ✅ Done | test_serialization_round_trip, test_json_round_trip_lossless |
+| Event append/replay | ✅ Done | TestEvents (4 tests, immutability + sequence + replay) |
+| Deterministic state transitions | ✅ Done | TestLifecycleTransitions (illegal raised, BFS multi-hop) |
+| AgentRunner compatibility facade | ✅ Done | RuntimeBackedAgentRunner, TestFacade (is-a + run/resume tracking) |
+| Lifecycle tests | ✅ Done | 48 tests in tests/unit/test_agent_runtime.py |
+
 ## Phase tracker
 
 | Phase | Status |
 |---|---|
 | 0 Control plane | COMPLETE |
 | 1 Browser foundation | COMPLETE |
-| 2 AgentRuntime | NOT STARTED |
+| 2 AgentRuntime | COMPLETE (deterministic core; LLM loop is Phase 4) |
 | 3 Tool Registry | NOT STARTED |
 | 4 OpenRouter agent loop | NOT STARTED |
 | 5 Goal/Subgoal | NOT STARTED |
@@ -184,8 +266,8 @@ persistent AgentRuntime
 ## Production gates
 
 Phase 1 completion:
-- [x] current regression suite green (506 tests, 0 failures)
-- [ ] persistent AgentSession (Phase 2)
+- [x] current regression suite green (554 tests, 0 failures)
+- [x] persistent AgentSession (Phase 2 — serializable session/run/checkpoint; SQLite store is Phase 8)
 - [x] policy on every mutation (PolicyEngine wired into BrowserExecutor)
 - [x] verification on every mutation (8 per-action verifiers)
 - [ ] durable human interrupts (Phase 8)

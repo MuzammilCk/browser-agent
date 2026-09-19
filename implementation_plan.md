@@ -69,8 +69,8 @@ observe → act → verify → re-observe
 works without an LLM.
 ~~~
 
-Evidence: all 506 tests pass, including 3 new browser error visibility tests
-and 6 new synthetic form tests (file input observe + iframe observe, 2 each).
+Evidence: all 506 tests passed at Phase 1 completion (superseded at Phase 2 HEAD
+by the 554-test baseline: 464 unit + 59 integration + 31 synthetic, 0 failures).
 
 ---
 
@@ -122,16 +122,35 @@ ABORTED
 
 Tasks:
 
-- [ ] Pydantic models
-- [ ] serializable state
-- [ ] event append/replay
-- [ ] deterministic state transitions
-- [ ] AgentRunner compatibility facade
-- [ ] lifecycle tests
+- [x] Pydantic models (app/agent/runtime/*.py; 48 lifecycle tests)
+- [x] serializable state (lossless JSON round-trip incl. cross-runtime restore)
+- [x] event append/replay (frozen AgentEvent, monotonic sequence, ordered replay)
+- [x] deterministic state transitions (explicit table; illegal transitions raise)
+- [x] AgentRunner compatibility facade (RuntimeBackedAgentRunner, same run/resume contract)
+- [x] lifecycle tests (tests/unit/test_agent_runtime.py: 48 passed)
 
 Exit:
 
 A paused run can be serialized and restored without losing logical task state.
+
+Evidence (verified at current HEAD, 2026-09-19): READY_FOR_CONFIRMATION run
+exports to JSON (`AgentRuntime.export_run_json`) and restores into a FRESH
+`AgentRuntime` (`restore_checkpoint_from_json`) with goal, subgoal, iteration,
+workflow state, pending interrupt, and full event log intact:
+
+- `TestCheckpoints::test_restored_run_preserves_logical_task_state` — asserts
+  goal, subgoal, iteration=4, lifecycle=READY_FOR_CONFIRMATION,
+  world_state.status, world_state.total_actions, actions_taken[0].binding,
+  and pending_interrupt.kind survive the round-trip. PASSED.
+- `TestCheckpoints::test_restored_run_replays_full_event_log` — restored event
+  log = captured log + 1 `RUN_RESTORED`, sequence continuity 1..N+1. PASSED.
+- `TestCheckpoints::test_json_round_trip_lossless` — JSON round-trip equality.
+  PASSED.
+
+Phase 2 tests: 48 passed (tests/unit/test_agent_runtime.py). Full regression:
+554 passed, 0 failed (464 unit + 59 integration + 31 synthetic).
+Note: HANDOFF decision type is deliberately reserved for Phase 10; memory
+handles are placeholders by design; SQLite checkpoint store is Phase 8.
 
 ---
 
