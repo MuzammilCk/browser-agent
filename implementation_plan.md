@@ -591,18 +591,21 @@ Initial specialists:
 - RecoveryAgent — analysis/scoped
 - VerificationAgent — read-only
 
-Tasks:
-
-- [ ] isolated context
-- [ ] agent-as-tool interface
-- [ ] timeout/cancellation
-- [ ] cleanup
-- [ ] transcript/audit
-- [ ] specialist permission tests
+- [x] isolated context (app/agent/specialists/models.py, context_builder.py: allowlisted projections, forbidden parameter defense against handles, secrets, raw bytes)
+- [x] agent-as-tool interface (app/agent/specialists/adapter.py: SpecialistToolAdapter, accepts_browser_action=False, read_only=True, normalization clears mutation/verification)
+- [x] timeout/cancellation (app/agent/specialists/base.py: asyncio timeout boundary, child task cancellation and await)
+- [x] cleanup (app/agent/specialists/base.py: cleanup hooks, no orphan tasks)
+- [x] transcript/audit (app/agent/specialists/base.py, models.py: SpecialistAuditLog, SpecialistAuditRecord with secret redaction and hashed payloads)
+- [x] specialist permission tests (tests/unit/test_specialist_agents.py: 24 comprehensive invariant and security boundary tests)
 
 Exit:
 
 Specialists improve decisions without independently mutating the browser.
+Evidence: Proven by tests/synthetic_forms/test_specialist_agent_loop.py (real Chromium):
+Scenario 1: FormSemanticsAgent advises on simple.html fields -> primary AgentReasoner decides typed fill_field action -> executed through ToolRegistry -> PolicyEngine -> BrowserExecutor -> live Chromium DOM verified -> WorldState updated. Specialist never directly mutates DOM.
+Scenario 2: RecoveryAgent analyzes failure evidence projection -> recommends RETRY_WITH_FRESH_TARGET -> specialist output strictly advisory.
+Scenario 3: Prompt injection escalation attempt in specialist output fail-closed blocked before any policy bypass or execution.
+Phase 10 tests: 24 unit specialist + 3 synthetic Chromium acceptance scenarios. Full regression suite: 792 passed, 0 failures.
 
 ---
 

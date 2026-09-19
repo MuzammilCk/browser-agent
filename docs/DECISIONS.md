@@ -401,5 +401,59 @@ Phase 9 (2026-09-19):
 Status: ACCEPTED — implemented in `app/agent/memory/*`, covered by 27 targeted tests (24 unit memory,
 2 integration postgres memory, 1 synthetic Chromium+Postgres multi-turn acceptance loop).
 
+## D022 — Restricted specialist agents as non-mutating advisors
+
+Phase 10 (2026-09-19):
+
+1. Advisors, Never Authorities (Rule 1):
+   - Specialists provide structured recommendations, evidence, and classifications only.
+   - Specialists never directly mutate `AgentWorldState`, mark items `VERIFIED`, complete goals,
+     authorize tools, bypass `PolicyEngine`, create/modify HITL approvals, write directly to
+     `MemoryStore`, or unlock final legal/financial submission.
+   - Specialist verification is advisory; authoritative verification remains deterministic,
+     post-observation, and browser/environment grounded.
+
+2. Semantically Distinct Results (Rule 2):
+   - Specialist outputs are returned under `result_kind: "specialist_analysis"`.
+   - Never masquerade as browser mutation results (`ToolResult.post_observation` is explicitly `None`).
+   - Specialist analysis enters reasoning context and memory-candidate pipelines only.
+
+3. Allowlisted Projections & Complete Isolation (Rules 3 & 4):
+   - Boundary enforcement uses pure serialization: `PageObservationProjection`,
+     `WorldStateProjection`, `FailureEvidenceProjection`, `DocumentMetadataProjection`,
+     `MemorySummaryProjection`.
+   - Never pass live `Page`, `BrowserContext`, `BrowserExecutor`, `AgentRuntime`, `ToolRegistry`,
+     passwords, OTPs, PINs, or raw document bytes across the specialist boundary.
+   - No nested specialist calls or subagent swarms: exactly one primary browser-controlling runtime.
+
+4. Authoritative Registry & Immutable Permission Classes (Rule 5):
+   - Permissions are fixed by the registered specialist implementation and cannot be altered
+     dynamically by the model or prompt.
+   - Four immutable classes:
+     * `READ_ONLY`: Sees page observation projection only (`PortalResearchAgent`, `FormSemanticsAgent`).
+     * `VAULT_SCOPED`: Sees document reference metadata only; never raw contents (`DocumentAgent`).
+     * `ANALYSIS_ONLY`: Sees failure evidence and safe world state summaries (`RecoveryAgent`).
+     * `VERIFICATION_ONLY`: Compares target vs observed evidence; outputs recommendation (`VerificationAgent`).
+
+5. Epistemic Status & Provenance (Rule 6):
+   - Specialist recommendations are strictly `INFERRED` unless backed by explicit observed evidence.
+   - Outputs can never unilaterally promote `INFERRED -> VERIFIED`.
+   - Provenance retains `specialist_type`, `invocation_id`, `parent_run_id`, `evidence`, `confidence`,
+     and `epistemic_status`.
+
+6. Memory & WorldState Boundaries (Rules 7 & 8):
+   - Route through `SpecialistResult -> MemoryCandidate -> MemoryWritePolicy -> MemoryStore`.
+   - Specialist results cannot directly write to `MemoryStore` or mutate `AgentWorldState`.
+   - Primary `AgentRuntime` independently decides browser mutations based on deterministic verification.
+
+7. Bounded Execution, Timeout, Cancellation, and Audit (Rules 11, 12, & 13):
+   - Specialist runs are bounded by strict timeouts; child tasks are cleanly cancelled and awaited.
+   - Crashes produce fresh safe invocations without resuming stale sub-processes.
+   - Thread-safe `SpecialistAuditLog` records every invocation with hashed/redacted payloads.
+   - `SpecialistToolAdapter` normalizes outputs to clear `post_observation`, `verification_status`, and `policy_allowed`.
+
+Status: ACCEPTED — implemented in `app/agent/specialists/*`, covered by 27 targeted tests (24 unit specialist tests, 3 synthetic Chromium acceptance scenarios), 792 total tests passing with 0 failures.
+
+
 
 

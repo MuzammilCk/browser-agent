@@ -61,6 +61,9 @@ _TOOL_PAYLOAD_SAFE_KEYS = frozenset({
     "executor_message", "refreshed_observation", "tab_switched",
     "url", "page_type", "found", "options", "selected",
     "resolvable", "sensitivity", "display_name", "resolution_hint",
+    # Specialist keys (Phase 10)
+    "result_kind", "specialist_type", "permission", "outcome",
+    "confidence", "epistemic_status", "evidence", "ambiguities",
 })
 
 
@@ -179,11 +182,13 @@ def _result_section(results: list[ToolResult]) -> list[dict]:
         if result.success:
             # Only explicitly whitelisted keys cross over, and only when
             # scalar — defense in depth against value-bearing keys.
-            safe_payload = {
-                k: v for k, v in result.payload.items()
-                if k in _TOOL_PAYLOAD_SAFE_KEYS
-                and isinstance(v, (str, int, float, bool))
-            }
+            safe_payload = {}
+            for k, v in result.payload.items():
+                if k in _TOOL_PAYLOAD_SAFE_KEYS:
+                    if isinstance(v, (str, int, float, bool)):
+                        safe_payload[k] = v
+                    elif isinstance(v, list) and all(isinstance(x, str) for x in v):
+                        safe_payload[k] = v[:5]
             payload["result"] = safe_payload
         section.append(payload)
     return section

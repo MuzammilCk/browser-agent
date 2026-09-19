@@ -38,8 +38,8 @@ DECISION_VALIDATION_FAILED = "DECISION_VALIDATION_FAILED"
 # parsing free text.
 MODEL_FAILURE_REASON_PREFIX = "model_failure:"
 
-# Decisions the Phase 4 model may emit. HANDOFF stays reserved for
-# Phase 10 (agents.md: HANDOFF decision type is deliberately reserved).
+# Decisions the model may emit (HANDOFF is disallowed; specialists are agent-as-tools
+# invoked via TOOL_CALL).
 ALLOWED_DECISION_TYPES = frozenset(
     decision_type.value
     for decision_type in (

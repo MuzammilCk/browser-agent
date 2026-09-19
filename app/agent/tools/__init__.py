@@ -111,8 +111,9 @@ def build_registry(
     value_resolver=None,
     document_resolver=None,
     reference_registry=None,
+    include_specialists: bool = False,
 ) -> ToolRegistry:
-    """Build a registry with all Phase 3 tools registered."""
+    """Build a registry with Phase 3 tools and optionally Phase 10 specialists."""
     registry = ToolRegistry()
     for cls in BROWSER_TOOL_CLASSES:
         registry.register(cls())
@@ -126,4 +127,7 @@ def build_registry(
                 reference_registry=reference_registry,
             )
         )
+    if include_specialists:
+        from app.agent.specialists.adapter import register_specialists_in_tool_registry
+        register_specialists_in_tool_registry(registry)
     return registry
