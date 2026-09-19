@@ -11,7 +11,8 @@ Phase 5 — Goal / Plan / Subgoal (COMPLETE)
 Phase 6 — WorldState (COMPLETE)  
 Phase 7 — Reflection/Recovery (COMPLETE)  
 Phase 8 — Durable Human Interrupts (COMPLETE)  
-Overall: IN PROGRESS (Phases 0–8 complete; Phase 9 next)  
+Phase 9 — Memory + Compaction (COMPLETE)  
+Overall: IN PROGRESS (Phases 0–9 complete; Phase 10 next)  
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -556,19 +557,27 @@ Layers:
 
 Tasks:
 
-- [ ] memory schema
-- [ ] working-memory builder
-- [ ] event-backed episodic memory
-- [ ] semantic profile/portal memory
-- [ ] experience extraction
-- [ ] threshold-based compaction
-- [ ] isolated summarization
-- [ ] provenance
-- [ ] memory poisoning tests
+- [x] memory schema (app/agent/memory/schema.sql, schema.py, models.py: semantic_memories, memory_provenance, episodes, experiences, compaction_records)
+- [x] working-memory builder (app/agent/memory/models.py: WorkingMemory with bounded tool results, failures, and dialogue history)
+- [x] event-backed episodic memory (app/agent/memory/models.py, store.py, postgres_store.py: EpisodicMemory with trajectory milestones and key events)
+- [x] semantic profile/portal memory (app/agent/memory/models.py: SemanticMemoryItem with validity intervals, is_current, and supersession tracking)
+- [x] experience extraction (app/agent/memory/models.py: ExperienceMemory with contextual trigger conditions, recovery strategies, and cautious confidence scaling)
+- [x] threshold-based compaction (app/agent/memory/compactor.py: WorkingMemoryCompactor preserving goal, subgoal, verified WorldState facts, unresolved questions, interrupts, and approvals)
+- [x] isolated summarization (app/agent/memory/summarizer.py: IsolatedSummarizer sandboxed with zero browser or tool privileges and fail-safe preservation)
+- [x] provenance (MemoryProvenance with source, author_type, run_id, observation_id, tool_name, state_version, timestamp, and details)
+- [x] memory poisoning tests (tests/unit/test_agent_memory.py: prompt-injection defense, sensitive data rejection, unverified inference rejection)
 
 Exit:
 
 Long workflows can compact context while preserving goal, verified facts, unresolved issues and next actions.
+Evidence: Proven by tests/synthetic_forms/test_memory_compaction_loop.py::TestMemoryCompactionLoopAcceptance::test_multi_turn_memory_and_compaction_lifecycle (real Chromium + live PostgreSQL):
+Turn 1: Citizen provides stable preference -> verified semantic memory stored in PostgreSQL with provenance.
+Turn 2: Workflow executes in real Chromium -> applicant details verified -> meaningful episodic milestone recorded in PostgreSQL.
+Turn 3: Layout re-renders -> stale reference error triggers recovery -> fresh target filled and verified -> recovery pattern persisted as experience memory in PostgreSQL.
+Turn 4: New workflow starts -> deterministic retriever queries PostgreSQL -> bounded semantic, episodic, and experience memories injected into reasoner context.
+Turn 5: Working memory exceeds threshold -> loss-aware compaction executes -> current goal, subgoal, verified WorldState facts, and unresolved questions are 100% preserved -> compaction record persisted in PostgreSQL.
+Turn 6: Malicious webpage attempts memory injection -> MemoryWritePolicy rejects privilege escalation and unverified status masquerade -> false memory blocked from persistence.
+Phase 9 tests: 24 unit memory + 2 integration postgres memory + 1 synthetic multi-turn acceptance loop. All 27 pass cleanly. Full regression suite: 765 passed, 0 failures.
 
 ---
 

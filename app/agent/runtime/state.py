@@ -21,6 +21,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.agent.interrupts.models import ApprovalBinding, HumanInterrupt
+from app.agent.memory.models import WorkingMemory
 from app.agent.world.models import AgentWorldState
 from app.models.workflow_state import WorkflowState
 
@@ -302,6 +303,9 @@ class AgentRunState(BaseModel):
     )
     agent_world_state: AgentWorldState | None = Field(
         default=None, description="Durable semantic world state (Phase 6/8)"
+    )
+    working_memory: WorkingMemory | None = Field(
+        default=None, description="Durable working memory state (Phase 9)"
     )
 
     # Cost / usage

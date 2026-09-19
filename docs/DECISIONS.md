@@ -352,4 +352,54 @@ Status: ACCEPTED — implemented in `app/agent/interrupts/*`, `app/agent/persist
 `app/agent/runtime/resume.py`, covered by 26 targeted tests (10 unit interrupts,
 11 unit resume protocol, 4 integration postgres, 1 synthetic Chromium+Postgres crash-recovery).
 
+## D021 — Multi-layer memory architecture, deterministic write policy, loss-aware compaction, and PostgreSQL persistence
+
+Phase 9 (2026-09-19):
+
+1. Four Separate Memory Layers:
+   - Working Memory: Short-lived, strictly bounded context for current loop iterations
+     (goal, subgoal, verified WorldState facts, recent tool results, recovery attempts,
+     unresolved questions, active interrupts, and approvals).
+   - Episodic Memory: Milestone records of what happened during workflows with
+     structured key events, summaries, outcomes, and provenance (never raw conversation dumps).
+   - Semantic Memory: Durable facts with explicit validity intervals (`valid_from`, `valid_until`),
+     `is_current` flags, and `superseded_by` pointers for full historical lineage.
+   - Experience Memory: Contextual execution lessons from successful recoveries and patterns
+     with success/failure counters and cautious confidence scaling (no premature generalization).
+2. Deterministic Memory Write Policy & Poisoning Defense:
+   - The LLM cannot freely write arbitrary permanent memories. An explicit pipeline gates
+     persistence: `Candidate` -> `MemoryWritePolicy` -> `Store`.
+   - Strictly rejects passwords, OTPs, PINs, auth secrets, raw document bytes, and raw identity numbers.
+   - Enforces semantic references (`USER.full_name`, `DOCUMENT.income_certificate`).
+   - Webpage content and untrusted sources cannot write permanent system rules, cannot grant
+     privileges (e.g. "User authorized payments"), and cannot claim `VERIFIED` epistemic status.
+   - Model inferences cannot propose `VERIFIED` status without deterministic runtime verification.
+3. Epistemic Hierarchy & Conflict Resolution:
+   - `VERIFIED > OBSERVED > INFERRED > STALE`.
+   - Conflicting memories never silently overwrite each other. When a newer verified fact
+     supersedes an older fact, the older record is marked `is_current = False`, `valid_until = now`,
+     `superseded_by = new_id`. Both provenance logs are preserved intact.
+   - Current WorldState always supersedes memory: `Observation > WorldState > Memory > Inference`.
+4. Loss-Aware Compaction:
+   - When working memory exceeds thresholds, compacts historical tool results and conversation
+     turns while strictly preserving: current goal, active subgoal, verified WorldState facts,
+     unresolved questions, active human interrupts, and pending approvals.
+   - Compacted context is consolidated into an episodic milestone and an audit `CompactionRecord`.
+   - Compaction never mutates WorldState or alters browser state.
+5. Deterministic Property-Based Retrieval:
+   - Filtered by portal, goal, active subjects, user session, and recency without vector databases
+     or embeddings. Bounded result sets (max 5 semantic facts, max 3 episodes, max 3 experiences)
+     prevent context explosion in `AgentReasoner`.
+6. Sandboxed Isolated Summarization:
+   - Runs in a strict sandbox without browser, tool registry, or state mutation powers.
+   - Output is strictly validated; summarization failure preserves original context without fabricating summaries.
+7. PostgreSQL Persistence:
+   - Backed by `asyncpg` with relational tables (`semantic_memories`, `memory_provenance`, `episodes`,
+     `experiences`, `compaction_records`), indexes, connection pooling, and transactional consistency.
+   - An `InMemoryMemoryStore` is provided for isolated, fast unit testing.
+
+Status: ACCEPTED — implemented in `app/agent/memory/*`, covered by 27 targeted tests (24 unit memory,
+2 integration postgres memory, 1 synthetic Chromium+Postgres multi-turn acceptance loop).
+
+
 

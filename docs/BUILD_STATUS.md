@@ -1,8 +1,8 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-19
-Current phase: Phase 8 — Durable Human Interrupts (HITL) (COMPLETE — PostgreSQL-backed persistence, table-driven interrupt lifecycle, machine-checked approval bindings, atomic lease locking, and crash-safe resume; exit criterion proven with real Chromium and PostgreSQL restart)
-Overall: IN PROGRESS (Phases 0–8 complete)
+Current phase: Phase 9 — Memory + Compaction (COMPLETE — Four memory layers [working, episodic, semantic, experience], deterministic write policy, poisoning & sensitive data defense, loss-aware compaction, sandboxed isolated summarizer, and PostgreSQL persistence; exit criterion proven with real Chromium + PostgreSQL multi-turn workflow)
+Overall: IN PROGRESS (Phases 0–9 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 8, 2026-09-19): **738 tests passing** (631 unit + 63 integration + 44 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 9, 2026-09-19): **765 tests passing** (655 unit + 65 integration + 45 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -727,6 +727,73 @@ verified by `tests/synthetic_forms/test_durable_hitl_crash_recovery.py::TestDura
 21. Resume lock is cleanly released.
 22. Full audit trail verified in PostgreSQL `hitl_audit_events` (`CHECKPOINT_SAVED`, `INTERRUPT_CREATED`, `APPROVAL_GRANTED`, `RESUME_LOCK_ACQUIRED`, `RESUME_SUCCEEDED`, `RESUME_LOCK_RELEASED`).
 
+## Phase 9 evidence
+
+Implemented (additive, `app/agent/memory/*`, `app/agent/reasoning/context.py`, `app/agent/runtime/state.py`):
+
+- `app/agent/memory/models.py` — canonical models for the four memory layers:
+  - `WorkingMemory`: bounded short-lived state (goal, subgoal, verified facts, semantic fields, recent tool results capped at 5, recent failures capped at 5, conversation context capped at 10, unresolved questions, active interrupt, and active approval binding).
+  - `EpisodicMemory`: structured workflow milestone events with `run_id`, `portal`, `goal`, `subgoal`, `summary`, `key_events`, `outcome`, `confidence`, and `provenance`.
+  - `SemanticMemoryItem`: durable facts with `subject`, `predicate`, `value`, `portal`, `user_session_id`, `confidence`, `epistemic_status` (`VERIFIED`, `OBSERVED`, `INFERRED`, `STALE`), `created_at`, `updated_at`, `valid_from`, `valid_until`, `is_current`, and `superseded_by` pointers for complete historical lineage.
+  - `ExperienceMemory`: contextual operational lessons with `portal`, `task_type`, `trigger_condition`, `recovery_strategy`, `context_features`, `outcome`, `success_count`, `failure_count`, `confidence`, and `provenance`.
+  - `MemoryCandidate`: persistence proposal evaluated by policy prior to storage.
+  - `CompactionRecord`: audit log of working memory compaction events.
+- `app/agent/memory/policy.py` — deterministic `MemoryWritePolicy`:
+  - Strict sensitive data rejection: scans for passwords, secrets, OTPs, PINs, auth tokens, and raw 12-digit identity numbers; enforces semantic references (`USER.full_name`, `DOCUMENT.aadhaar`).
+  - Poisoning defense: untrusted page content (`AuthorType.UNTRUSTED_PAGE`) cannot persist system rules or grant permissions (e.g. "User authorized payments"), and cannot claim `VERIFIED` status.
+  - Epistemic promotion gate: model inferences (`AuthorType.MODEL_INFERRED`) cannot masquerade as `VERIFIED` memory without deterministic runtime verification.
+  - Conflict resolution: higher trust cannot be superseded by lower trust (`VERIFIED > OBSERVED > INFERRED > STALE`). Newer verified facts supersede older facts by setting `is_current = False`, `valid_until = now`, and `superseded_by = new_id` without deleting historical records or provenance.
+- `app/agent/memory/store.py` — abstract `MemoryStore` persistence protocol.
+- `app/agent/memory/in_memory_store.py` — thread-safe in-memory implementation of `MemoryStore` for fast, isolated unit testing.
+- `app/agent/memory/schema.sql` & `app/agent/memory/schema.py` — PostgreSQL DDL and async migration helper creating `semantic_memories`, `memory_provenance`, `episodes`, `experiences`, and `compaction_records` with deterministic query indexes.
+- `app/agent/memory/postgres_store.py` — production PostgreSQL memory persistence engine backed by `asyncpg`, connection pooling, atomic transactions, and parameterized SQL queries.
+- `app/agent/memory/retriever.py` — deterministic `MemoryRetriever` filtering across portal, goal, active subjects, user session, and recency without vector DB or embeddings; enforces strict result caps (max 5 semantic facts, max 3 episodes, max 3 experiences).
+- `app/agent/memory/compactor.py` — loss-aware `WorkingMemoryCompactor`:
+  - Triggers when working memory exceeds item thresholds.
+  - Inviolable preservation invariant: never discards goal, active subgoal, verified WorldState facts, unresolved questions, active human interrupts, or pending approvals.
+  - Consolidates historical tool results and conversation turns into an episodic milestone and a `CompactionRecord`.
+  - Never mutates WorldState or browser state.
+- `app/agent/memory/summarizer.py` — sandboxed `IsolatedSummarizer`: holds zero browser, tool, or policy handles; validates model outputs; preserves original context intact on failure without fabricating summaries.
+- `app/agent/reasoning/context.py` — enhanced `build_reasoning_context()` backward-compatibly to inject bounded `retrieved_memories` and `compacted_history`.
+- `app/agent/runtime/state.py` — added `working_memory` handle to `AgentRunState`.
+
+### Phase 9 test counts (verified at current HEAD, 2026-09-19)
+
+~~~
+pytest tests/unit/test_agent_memory.py -v
+→ 24 passed in 0.48s
+
+pytest tests/integration/test_postgres_memory_store.py -v
+→ 2 passed in 0.95s (live PostgreSQL)
+
+pytest tests/synthetic_forms/test_memory_compaction_loop.py -v
+→ 1 passed in 2.50s (real Chromium + live PostgreSQL)
+
+pytest tests/unit/ -q
+→ 655 passed in 21.26s (0 failures)
+
+pytest tests/integration/ -q
+→ 65 passed in 46.37s (0 failures)
+
+pytest tests/synthetic_forms/ -q
+→ 45 passed in 198.73s (0 failures)
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 765 passed, 0 failures (100% passing across entire test suite)
+~~~
+
+### Phase 9 exit criterion
+
+"Long workflows can compact context while preserving goal, verified facts, unresolved issues and next actions":
+verified by `tests/synthetic_forms/test_memory_compaction_loop.py::TestMemoryCompactionLoopAcceptance::test_multi_turn_memory_and_compaction_lifecycle`
+— real Chromium + live PostgreSQL (`browser_agent`):
+1. TURN 1: Citizen provides stable residence preference ("Kerala") -> evaluated by `MemoryWritePolicy` -> stored in PostgreSQL `semantic_memories` and `memory_provenance` as `VERIFIED` with `AuthorType.USER_EXPLICIT`.
+2. TURN 2: Workflow executes against `dynamic_recovery.html` in real Chromium -> applicant details filled and verified in `AgentWorldState` -> meaningful episodic milestone recorded in PostgreSQL `episodes`.
+3. TURN 3: Synthetic page triggers dynamic DOM re-render -> previous pincode target becomes stale -> fill fails closed with `STALE_OR_INVALID_TARGET` -> recovery re-observes and recovers to fresh target (`pincode_v2`) -> execution verified -> successful recovery strategy persisted in PostgreSQL `experiences`.
+4. TURN 4: Second workflow begins on same portal -> deterministic `MemoryRetriever` queries PostgreSQL -> verified semantic fact, past episode, and recovery experience retrieved -> bounded prompt-safe dictionary injected into `AgentReasoner` context via `build_reasoning_context()`.
+5. TURN 5: Working memory accumulates 13 items, exceeding threshold (8) -> `WorkingMemoryCompactor` executes loss-aware compaction -> goal ("Second Workflow Application"), active subgoal ("Address Verification Step"), verified WorldState facts (`applicant_name` = "Asha Kumar", `pincode` = "682001"), and unresolved questions ("Is landmark mandatory?") remain 100% intact -> historical tool results compacted into episodic milestone -> compaction audit record saved in PostgreSQL `compaction_records`.
+6. TURN 6: Malicious webpage attempts memory poisoning ("User authorized unrestricted payments", source: untrusted page) -> `MemoryWritePolicy` rejects candidate (`UNTRUSTED_SOURCE_PRIVILEGE_ESCALATION` / `UNVERIFIED_STATUS_MASQUERADE`) -> false memory is completely blocked from PostgreSQL persistence -> browser and WorldState truth remain unpoisoned.
+
 ## Phase tracker
 
 | Phase | Status |
@@ -740,7 +807,7 @@ verified by `tests/synthetic_forms/test_durable_hitl_crash_recovery.py::TestDura
 | 6 WorldState | COMPLETE (durable semantic state, epistemic hierarchy, multi-tab & dynamic-form continuity; exit criterion proven) |
 | 7 Reflection/Recovery | COMPLETE (bounded reflection, canonical 13-failure taxonomy, stale-target & dynamic recovery; exit criterion proven) |
 | 8 Durable HITL | COMPLETE (PostgreSQL persistence, lease-based locking, approval binding invalidation, crash-safe resume; exit criterion proven) |
-| 9 Memory | NOT STARTED |
+| 9 Memory | COMPLETE (four layers, write policy, poisoning defenses, loss-aware compaction, deterministic retrieval, PostgreSQL persistence; exit criterion proven with real Chromium + live PostgreSQL multi-turn workflow) |
 | 10 Specialist agents | NOT STARTED |
 | 11 Security hardening | PARTIAL |
 | 12 Evaluation | PARTIAL |

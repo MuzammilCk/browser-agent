@@ -235,6 +235,8 @@ def build_reasoning_context(
     tool_metadata: list[ToolMetadata],
     recent_results: list[ToolResult] | None = None,
     unresolved_questions: list[str] | None = None,
+    retrieved_memories: dict | None = None,
+    working_memory_summary: str | None = None,
 ) -> ReasoningContext:
     """Assemble the bounded reasoning context for one model call.
 
@@ -274,6 +276,11 @@ def build_reasoning_context(
         "unresolved_questions": unresolved_questions,
         "runtime_constraints": list(RUNTIME_CONSTRAINTS),
     }
+
+    if retrieved_memories:
+        context_payload["retrieved_memories"] = retrieved_memories
+    if working_memory_summary:
+        context_payload["compacted_history"] = working_memory_summary
 
     truncated: list[str] = []
     if observation is not None:
