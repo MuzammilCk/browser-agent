@@ -7,7 +7,8 @@ Phase 1 — Browser foundation (COMPLETE)
 Phase 2 — AgentSession/AgentRuntime (COMPLETE)  
 Phase 3 — Tool Registry (COMPLETE)  
 Phase 4 — OpenRouter agent loop (COMPLETE)  
-Overall: IN PROGRESS (Phases 0–4 complete; Phase 5 next)  
+Phase 5 — Goal / Plan / Subgoal (COMPLETE)  
+Overall: IN PROGRESS (Phases 0–5 complete; Phase 6 next)  
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -321,18 +322,57 @@ Models:
 
 Tasks:
 
-- [ ] goal parser
-- [ ] initial plan creation
-- [ ] subgoal lifecycle
-- [ ] dependencies
-- [ ] plan invalidation
-- [ ] plan revision
-- [ ] final-submission boundary in plan
-- [ ] dynamic-form tests
+- [x] goal parser (app/agent/strategy/goal_parser.py — deterministic
+      keyword/shape classification; ambiguity becomes explicit
+      unresolved questions; reference NAMES only; no LLM)
+- [x] initial plan creation (app/agent/strategy/plan_builder.py —
+      portal-agnostic step templates, strict dependency chain,
+      structurally validated at build)
+- [x] subgoal lifecycle (7-state table-validated state machine with
+      machine-readable SubgoalStatusReason; illegal transitions raise —
+      app/agent/strategy/manager.py)
+- [x] dependencies (depends_on chains enforced by activate_next;
+      failed/invalidated deps BLOCK downstream; unknown deps and cycles
+      rejected by validate_structure)
+- [x] plan invalidation (INVALIDATED status with causal evidence;
+      deterministic invalidation check demonstrated in the acceptance
+      test — expected fields absent from the fresh observation)
+- [x] plan revision (AgentPlanManager.revise replaces ONE subgoal —
+      id/order/dependents preserved, prior shape snapshotted into
+      PlanRevision, COMPLETED subgoals refused; recover_blocked re-opens
+      BLOCKED steps after revision)
+- [x] final-submission boundary in plan (boundary subgoal is
+      explicit; FinalSubmissionGate blocks activation/completion/
+      revision/any transition; next_actionable and activate_next skip
+      it; at_final_boundary parks the run at the human gate)
+- [x] dynamic-form tests (tests/synthetic_forms/test_strategy_loop.py
+      + new page tests/synthetic_forms/pages/dynamic_step_change.html)
 
 Exit:
 
 A local page change can invalidate one subgoal without destroying the overall goal.
+
+Evidence (verified at current HEAD, 2026-09-19):
+tests/synthetic_forms/test_strategy_loop.py::
+TestDynamicFormInvalidation::test_page_change_invalidates_one_subgoal_goal_survives —
+real Chromium + mock decision model + the REAL strategy/reasoning/registry
+stack: "Fill primary details" completes; the Continue click swaps the
+contact layout (dynamic_step_change.html); the deterministic
+invalidation check finds the active subgoal's expected fields gone and
+invalidates it (causal evidence preserved); the model proposes a REPLAN;
+the manager applies the revision (plan version 1→2, prior shape
+snapshotted into PlanRevision, id/order/dependents preserved); completed
+subgoals remain COMPLETED; the goal stays active; the agent continues
+from the REVISED subgoal and fills the new phone/address fields; the run
+ends parked at the final-submission boundary (at_final_boundary — a
+human decision, never planner-actionable). Phase 5 tests: 42 unit + 1
+synthetic. Regression: Phase 2 (48), Phase 3 (35), Phase 4 (48) all
+green; full suite 680 passed, 0 failed (581 unit + 59 integration + 40
+synthetic).
+Note: criteria are evaluated against a thin Snapshot of
+WorkflowState+PageObservation; the WorldState redesign that owns those
+sources is Phase 6. AgentRunState.plan wiring (typed plan into the
+Phase 2 runtime + events) is deliberate later wiring, not Phase 5 scope.
 
 ---
 

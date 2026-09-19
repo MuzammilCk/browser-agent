@@ -1,8 +1,8 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-19
-Current phase: Phase 4 — OpenRouter agent loop (COMPLETE — mock-model loop proven; real OpenRouter adapter added behind the same contract)
-Overall: IN PROGRESS (Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 complete)
+Current phase: Phase 5 — Goal / Plan / Subgoal (COMPLETE — deterministic strategic layer above the Phase 4 loop; exit criterion proven on a dynamic-form scenario)
+Overall: IN PROGRESS (Phases 0–5 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 4, 2026-09-19): **637 tests passing** (539 unit + 59 integration + 39 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 5, 2026-09-19): **680 tests passing** (581 unit + 59 integration + 40 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -371,6 +371,98 @@ Note: `OpenRouterDecisionModel` is unit-tested OFFLINE (stub gateway); a
 live OpenRouter smoke test requires a real API key and remains
 outstanding — it is not required for the Phase 4 exit criterion.
 
+## Phase 5 evidence
+
+Implemented (additive, `app/agent/strategy/*`; NO Phase 1–4 file modified
+except two compatibility guards in the Phase 5 manager itself — the
+Phase 4 reasoner, Phase 3 registry, Phase 2 runtime are untouched):
+
+- `app/agent/strategy/models.py` — `AgentGoal` (raw + normalized
+  description + typed success criteria), `AgentPlan` (versioned,
+  ordered subgoals, validate_structure: duplicate ids/orders, unknown
+  deps, dependency cycles, boundary placement), `Subgoal`
+  (explicit 7-state lifecycle + machine-readable status reasons),
+  `SuccessCriterion` (10 typed predicate kinds — explicit and testable,
+  never natural-language confidence), `PlanRevision` (revision id,
+  number, reason, affected subgoal ids, previous/new version, timestamp,
+  triggering event, previous subgoal shapes), `FinalSubmissionGate` /
+  `IllegalSubgoalTransition` / `PlanInvalid` / `SubgoalNotFound`.
+- `app/agent/strategy/criteria.py` — `Snapshot` (thin projection of
+  WorkflowState + PageObservation; Phase 6 will replace the sources,
+  not the contract) + deterministic `evaluate_criteria` (unknown kinds
+  fail CLOSED as uncertain) + three-valued `criteria_verdict`
+  (satisfied / deterministic-failure / uncertain — never confidence).
+- `app/agent/strategy/goal_parser.py` — deterministic goal parser
+  (keyword/shape classification; ambiguity becomes explicit unresolved
+  questions; multi-step + review-boundary detection; reference NAMES
+  only, never values; no LLM).
+- `app/agent/strategy/plan_builder.py` — deterministic initial plan
+  builder (portal-agnostic step templates; strict dependency chain;
+  explicit final-submission boundary subgoal).
+- `app/agent/strategy/manager.py` — `AgentPlanManager`: table-validated
+  subgoal transitions (illegal → raise, never coerced), evidence-based
+  completion (`complete` refuses unsatisfied criteria; no bypass),
+  `activate_next`/`next_actionable` NEVER target the boundary subgoal
+  (`at_final_boundary` parks the run at the human gate), `recover_blocked`
+  after revisions, `revise` replaces ONE subgoal (id/order/dependents
+  preserved; COMPLETED refused; prior shape snapshotted into the
+  PlanRevision; original invalidation evidence preserved).
+- New page: `tests/synthetic_forms/pages/dynamic_step_change.html`
+  (Stage 1 contact layout replaced by Stage 2 phone/address layout).
+
+### Phase 5 test counts (verified at current HEAD, 2026-09-19)
+
+~~~
+pytest tests/unit/test_agent_strategy.py -q
+→ 42 passed in 0.31s
+
+pytest tests/synthetic_forms/test_strategy_loop.py -q
+→ 1 passed in 4.79s (real Chromium)
+
+pytest tests/unit/test_agent_runtime.py -q            (Phase 2)
+→ 48 passed
+
+pytest tests/unit/test_tool_registry.py tests/synthetic_forms/test_tool_agent.py -q   (Phase 3)
+→ 35 passed
+
+pytest tests/unit/test_agent_reasoner.py tests/unit/test_reasoning_replay.py \
+  tests/unit/test_openrouter_decision_model.py tests/synthetic_forms/test_reasoning_loop.py -q   (Phase 4)
+→ 48 passed
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 680 passed in 177.25s (581 unit + 59 integration + 40 synthetic)
+~~~
+
+### Phase 5 exit criterion
+
+"A local page change can invalidate one subgoal without destroying the
+overall goal": verified by `tests/synthetic_forms/test_strategy_loop.py::
+TestDynamicFormInvalidation::test_page_change_invalidates_one_subgoal_goal_survives`
+— real Chromium + mock decision model + REAL strategy/reasoning/registry
+stack: the plan (5 subgoals) completes "Fill primary details", the
+Continue click swaps the contact layout, the deterministic invalidation
+check finds the active subgoal's expected fields gone and invalidates it
+(evidence preserved on the subgoal), the model proposes a REPLAN, the
+manager applies the revision (version 1→2, prior shape snapshotted,
+id/order/dependents preserved), previously completed subgoals remain
+COMPLETED, the goal stays active, and the agent continues from the
+REVISED subgoal — filling the new phone/address fields — ending parked
+at the final-submission boundary (`at_final_boundary`, boundary still
+PENDING: a human decision).
+
+Ten required proofs (tests/unit/test_agent_strategy.py):
+
+1. goal → structured AgentGoal — TestGoalParsing
+2. initial multi-step plan — TestInitialPlan
+3. dependencies respected — TestDependencies
+4. deterministic transitions — TestDeterministicTransitions
+5. completed subgoals remain completed — TestCompletedWorkIsStable
+6. local invalidation preserves goal — TestLocalInvalidation
+7. revision preserves unaffected subgoals — TestRevision
+8. final-submission boundary explicit — TestFinalSubmissionBoundary
+9. invalid plans rejected — TestInvalidPlansRejected
+10. serialization round-trip — TestSerialization
+
 ## Phase tracker
 
 | Phase | Status |
@@ -380,7 +472,7 @@ outstanding — it is not required for the Phase 4 exit criterion.
 | 2 AgentRuntime | COMPLETE (deterministic core; LLM loop is Phase 4) |
 | 3 Tool Registry | COMPLETE (typed registry + adapters; LLM loop is Phase 4) |
 | 4 OpenRouter agent loop | COMPLETE (mock-model loop proven; real OpenRouterDecisionModel behind the same DecisionModel contract; live-key smoke test outstanding) |
-| 5 Goal/Subgoal | NOT STARTED |
+| 5 Goal/Subgoal | COMPLETE (deterministic strategic layer; exit criterion proven on dynamic-form scenario) |
 | 6 WorldState | NOT STARTED |
 | 7 Reflection/Recovery | NOT STARTED |
 | 8 Durable HITL | NOT STARTED |

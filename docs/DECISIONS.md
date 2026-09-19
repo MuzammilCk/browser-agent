@@ -187,3 +187,47 @@ Status: ACCEPTED — implemented in `app/agent/reasoning/*`, covered by
 `tests/unit/test_reasoning_replay.py` (6),
 `tests/unit/test_openrouter_decision_model.py` (10), and
 `tests/synthetic_forms/test_reasoning_loop.py` (4, real Chromium).
+
+## D017 — Strategic planning is deterministic state; the reasoner stays tactical
+
+Phase 5 (2026-09-19):
+
+1. Goal/Plan/Subgoal are STRATEGIC STATE (serializable pydantic models,
+   no execution capability). The Phase 4 AgentReasoner remains the only
+   LLM component and stays TACTICAL: it decides the next action; the
+   deterministic AgentPlanManager owns subgoal lifecycle and revisions.
+   The initial plan is built deterministically (portal-agnostic
+   templates), NOT by the model — no portal scripts (rule 17).
+2. Success is EVIDENCE, not confidence: SuccessCriterion is a typed
+   predicate (10 kinds) evaluated deterministically against a Snapshot
+   of WorkflowState + PageObservation. Unknown criterion kinds fail
+   CLOSED as uncertain; the verdict is three-valued (satisfied /
+   deterministic-failure / uncertain). `complete` refuses to complete a
+   subgoal whose required criteria are unsatisfied — there is no
+   planner-side bypass.
+3. Subgoal lifecycle is a table-validated state machine (mirrors D014):
+   7 states, machine-readable status reasons, illegal transitions raise.
+4. Revision is SURGICAL: revise() replaces ONE subgoal, preserving its
+   id, order and dependents; the prior shape is snapshotted into an
+   immutable PlanRevision (reason, affected ids, previous/new version,
+   timestamp, triggering event, previous shapes). COMPLETED subgoals are
+   refused revision — completed work is stable (COMPLETED has no
+   outgoing transitions).
+5. The final-submission boundary is a FIRST-CLASS plan element:
+   `final_submission=True` subgoal is hard-gated — FinalSubmissionGate
+   blocks activation/completion/revision/any transition (the gate sits
+   inside _transition, so no code path bypasses it); next_actionable and
+   activate_next skip it; at_final_boundary signals the human handover.
+   Planning REPRESENTS the boundary; PolicyEngine + runtime constraints
+   still gate the actual action.
+6. REPLAN decisions from the model are PROPOSALS: the manager applies
+   them deterministically (structure validated, completed work
+   protected). The model cannot create/destroy plan structure directly.
+7. Snapshot is deliberately a thin projection of the sources Phase 6's
+   AgentWorldState will own — the criterion contract will not change
+   when WorldState lands. AgentRunState.plan wiring (typed plan into the
+   Phase 2 runtime) is deliberate later wiring.
+
+Status: ACCEPTED — implemented in `app/agent/strategy/*`, covered by
+`tests/unit/test_agent_strategy.py` (42) and
+`tests/synthetic_forms/test_strategy_loop.py` (1, real Chromium).
