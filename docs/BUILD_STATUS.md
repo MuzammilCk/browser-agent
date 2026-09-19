@@ -1,8 +1,8 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-19
-Current phase: Phase 2 — AgentSession and AgentRuntime (deterministic core COMPLETE)
-Overall: IN PROGRESS (Phase 0 + Phase 1 + Phase 2 complete)
+Current phase: Phase 4 — OpenRouter agent loop (COMPLETE — mock-model loop proven; real OpenRouter adapter added behind the same contract)
+Overall: IN PROGRESS (Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 3, 2026-09-19): **589 tests passing** (495 unit + 59 integration + 35 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 4, 2026-09-19): **637 tests passing** (539 unit + 59 integration + 39 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -265,6 +265,112 @@ Deliberately deferred: agent-services family (reflect/replan/verify_goal —
 Phases 5/7), handoff_browser + specialist tools (Phase 10), ToolContext
 auto-derivation inside AgentRuntime (natural Phase 4 loop wiring).
 
+## Phase 4 evidence
+
+Implemented (additive; NO Phase 1–3 file modified — the reasoner is a new
+caller of the existing registry/executor path):
+
+- `app/agent/reasoning/protocol.py` — `DecisionModel` protocol (prompt in,
+  parsed JSON out; the ONLY model capability), `ReasonerDecisionSchema`
+  (strict, extra=forbid), `build_decision_json_schema()` (OpenRouter
+  structured-output schema derived from the same pydantic model — prompt
+  and validation contracts cannot drift), `ReasoningOutcome`
+  (decided | explicit MODEL_FAILURE), DECISION_* failure codes,
+  `decision_to_tool_call`.
+- `app/agent/reasoning/context.py` — minimal bounded context assembler
+  (goal, current subgoal, plan state, verified WorldState summary,
+  authoritative page observation, tool schemas, semantic reference NAMES,
+  recent ToolResults, unresolved questions, runtime constraints; caps:
+  60 elements / 5 recent results / 1500 chars visible text; the ToolResult
+  payload filter is KEY-based — value-bearing keys such as
+  `resolved_value` can never reach the prompt).
+- `app/agent/reasoning/parser.py` — strict decision parsing: schema →
+  decision-type allow-list (HANDOFF reserved, Phase 10) → registered-tool
+  check → typed BrowserAction (pydantic validators incl. sensitive-literal
+  policy) → AgentDecision. The runtime stamps the CURRENT observation_id
+  onto every browser action; a stale id in the model's dict is
+  overwritten, never trusted.
+- `app/agent/reasoning/reasoner.py` — `AgentReasoner`: bounded retries
+  (default 3, hard cap 5) with rejection feedback on repair attempts;
+  explicit MODEL_FAILURE on exhaustion; holds only frozen tool-name sets —
+  no registry/executor/page/runtime handle, so it cannot execute anything
+  by construction.
+- `app/agent/reasoning/mock_model.py` — deterministic scripted model
+  (dicts / callables / exceptions per call; no API key).
+- `app/agent/reasoning/openrouter_model.py` — `OpenRouterDecisionModel`
+  over the EXISTING `LLMGateway` (strict json_schema response_format,
+  temperature 0); non-JSON/non-object output raises `InvalidModelOutput`
+  → reasoner retries → explicit MODEL_FAILURE; building without an API
+  key raises (fail closed — never silently degrades to deterministic).
+
+### Phase 4 test counts (verified at current HEAD, 2026-09-19)
+
+~~~
+pytest tests/unit/test_agent_reasoner.py -q
+→ 28 passed in 0.63s
+
+pytest tests/unit/test_reasoning_replay.py -q
+→ 6 passed in 1.80s
+
+pytest tests/unit/test_openrouter_decision_model.py -q
+→ 10 passed in 0.51s (offline — stub gateway, no live key)
+
+pytest tests/synthetic_forms/test_reasoning_loop.py -q
+→ 4 passed in 6.44s (real Chromium)
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 637 passed in 191.92s (539 unit + 59 integration + 39 synthetic)
+~~~
+
+### Phase 4 exit criterion
+
+"The model chooses among multiple tools over multiple iterations while
+deterministic runtime rules remain authoritative": verified by
+`tests/synthetic_forms/test_reasoning_loop.py::
+TestMockModelCompletesWizard::test_model_chooses_multiple_tools_over_multiple_iterations`
+— the scripted decision model drives the multistep.html wizard in real
+Chromium through the full loop (context assembly → AgentReasoner →
+schema-validated AgentDecision → ToolRegistry → BrowserExecutor →
+ToolResult → next context), choosing 4 DIFFERENT tools over 10 iterations
+(observe_page ×3, fill_field ×4, select_option ×1, click ×2), 10/10
+results successful, ending on the review/submit step. Policy +
+verification ran inside the existing executor path on every mutation;
+the reasoner never touched the browser. Deterministic rules stayed
+authoritative in the failure path too: a bogus-ref fill failed closed
+with STALE_OR_INVALID_TARGET, the failure was surfaced to the model in
+the next context (recent_tool_results), and recovery was model-chosen.
+
+The ten required mock-model behaviors (user instruction, Phase 4), all
+proven in `tests/unit/test_agent_reasoner.py` + the synthetic suite:
+
+1. model selects observe_page — TestModelSelectsObservePage
+2. model selects fill_field (literal + value_ref semantic reference) —
+   TestModelSelectsFillField
+3. model selects select_option — TestModelSelectsSelectOption
+4. model handles tool failure and chooses another action —
+   TestModelHandlesToolFailure + synthetic recovery test
+5. malformed tool call rejected (missing action, broken action dict) —
+   TestMalformedToolCallRejected
+6. unknown tool rejected at the parser AND still at the registry —
+   TestUnknownToolRejected
+7. transport errors + persistently malformed output → explicit
+   MODEL_FAILURE (code + `model_failure:` reason prefix, attempts
+   bounded, decision None, no fabricated fallback) —
+   TestExplicitModelFailure
+8. multiple iterations work (observe → fill → select → complete with
+   per-iteration observation binding) — TestMultipleIterations
+9. replay produces the same decisions/results/prompts from recorded
+   inputs across independent episodes (incl. a failure episode) —
+   tests/unit/test_reasoning_replay.py
+10. model cannot bypass policy through tool arguments (sensitive-literal
+   rejection, extra-field rejection at the strict schema, action on a
+   read-only tool rejected, observation-id override) —
+   TestPolicyBypassPrevention
+
+Note: `OpenRouterDecisionModel` is unit-tested OFFLINE (stub gateway); a
+live OpenRouter smoke test requires a real API key and remains
+outstanding — it is not required for the Phase 4 exit criterion.
+
 ## Phase tracker
 
 | Phase | Status |
@@ -273,7 +379,7 @@ auto-derivation inside AgentRuntime (natural Phase 4 loop wiring).
 | 1 Browser foundation | COMPLETE |
 | 2 AgentRuntime | COMPLETE (deterministic core; LLM loop is Phase 4) |
 | 3 Tool Registry | COMPLETE (typed registry + adapters; LLM loop is Phase 4) |
-| 4 OpenRouter agent loop | NOT STARTED |
+| 4 OpenRouter agent loop | COMPLETE (mock-model loop proven; real OpenRouterDecisionModel behind the same DecisionModel contract; live-key smoke test outstanding) |
 | 5 Goal/Subgoal | NOT STARTED |
 | 6 WorldState | NOT STARTED |
 | 7 Reflection/Recovery | NOT STARTED |

@@ -4,7 +4,10 @@
 
 Phase 0 — Control-plane preparation  
 Phase 1 — Browser foundation (COMPLETE)  
-Overall: IN PROGRESS  
+Phase 2 — AgentSession/AgentRuntime (COMPLETE)  
+Phase 3 — Tool Registry (COMPLETE)  
+Phase 4 — OpenRouter agent loop (COMPLETE)  
+Overall: IN PROGRESS (Phases 0–4 complete; Phase 5 next)  
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -241,19 +244,66 @@ LLM
 
 Tasks:
 
-- [ ] AgentReasoner
-- [ ] structured OpenRouter tool calling
-- [ ] minimal context assembler
-- [ ] strict decision validation
-- [ ] bounded model retries
-- [ ] visible model failures
-- [ ] explicit fallback state, never silent fallback
-- [ ] mock-model tests
-- [ ] replay tests
+- [x] AgentReasoner (app/agent/reasoning/reasoner.py — model-agnostic,
+      holds only frozen tool-name sets, no registry/executor/page handle)
+- [x] structured OpenRouter tool calling (app/agent/reasoning/
+      openrouter_model.py — OpenRouterDecisionModel over the EXISTING
+      LLMGateway/OpenRouterGateway; strict json_schema response_format
+      derived from ReasonerDecisionSchema via build_decision_json_schema;
+      unit-tested offline with a stub gateway — no live key required or
+      used; live-key smoke test outstanding)
+- [x] minimal context assembler (app/agent/reasoning/context.py —
+      bounded: 60 elements / 5 recent results / 1500 visible-text chars;
+      key-based ToolResult payload whitelist so value-bearing keys such
+      as resolved_value never reach the prompt; semantic reference NAMES
+      only, never values; no policy internals)
+- [x] strict decision validation (app/agent/reasoning/parser.py — strict
+      schema extra=forbid → decision-type allow-list (HANDOFF reserved
+      Phase 10) → registered-tool check → typed BrowserAction →
+      AgentDecision; runtime stamps CURRENT observation_id, overriding
+      any model-supplied stale id)
+- [x] bounded model retries (ReasonerConfig.max_attempts default 3,
+      hard cap 5; rejection reason fed back on repair attempts)
+- [x] visible model failures (ReasoningOutcome.phase=MODEL_FAILURE with
+      machine-readable code DECISION_PARSE_FAILED / DECISION_SCHEMA_INVALID /
+      DECISION_VALIDATION_FAILED and a `model_failure:` reason prefix)
+- [x] explicit fallback state, never silent fallback (retries exhausted →
+      ReasoningOutcome.model_failure with decision=None; no deterministic
+      decision is ever fabricated — proven by
+      TestExplicitModelFailure::test_never_falls_back_to_a_deterministic_decision)
+- [x] mock-model tests (tests/unit/test_agent_reasoner.py: 28 tests on
+      the deterministic MockDecisionModel — no API key; plus 3 Chromium
+      loop tests in tests/synthetic_forms/test_reasoning_loop.py)
+- [x] replay tests (tests/unit/test_reasoning_replay.py: 6 tests —
+      identical prompts/decisions/results/executor calls across
+      independent episodes, including a tool-failure episode)
 
 Exit:
 
 The model chooses among multiple tools over multiple iterations while deterministic runtime rules remain authoritative.
+
+Evidence (verified at current HEAD, 2026-09-19):
+tests/synthetic_forms/test_reasoning_loop.py::
+TestMockModelCompletesWizard::test_model_chooses_multiple_tools_over_multiple_iterations —
+the scripted decision model drives multistep.html in real Chromium
+through context assembly → AgentReasoner → schema-validated
+AgentDecision → ToolRegistry → BrowserExecutor → ToolResult → next
+context, choosing 4 different tools over 10 iterations (observe_page ×3,
+fill_field ×4, select_option ×1, click ×2), 10/10 successful, ending on
+the review/submit step. Policy + verification ran inside the existing
+executor path on every mutation; the reasoner holds no browser handle.
+Failure path: a bogus-ref fill failed closed (STALE_OR_INVALID_TARGET),
+the failure surfaced to the model in the next context's
+recent_tool_results, recovery was model-chosen. Phase 4 tests: 44 unit
+(28 reasoner + 6 replay + 10 OpenRouter adapter, offline) + 4 synthetic
+(real Chromium). Full regression: 637 passed, 0 failed (539 unit + 59
+integration + 39 synthetic).
+Note: the decision interface is structured JSON-schema output validated
+against the registry catalog (not OpenRouter's native function-calling
+API) so the prompt contract and the validation contract are the same
+pydantic model; AgentRuntime auto-derivation of ToolContext remains a
+later wiring task — Phase 4 runs the loop against the existing
+facade/driver path without redesigning Phases 1–3.
 
 ---
 

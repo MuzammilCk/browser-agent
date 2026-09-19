@@ -144,3 +144,46 @@ Phase 3 Tool Registry (2026-09-19):
 Status: ACCEPTED — implemented in `app/agent/tools/*`, covered by
 `tests/unit/test_tool_registry.py` (31 tests) and
 `tests/synthetic_forms/test_tool_agent.py` (4 tests, real Chromium).
+
+## D016 — Phase 4 reasoner boundary: model proposes JSON, runtime owns everything else
+
+Phase 4 (2026-09-19):
+
+1. The model's ONLY capability is the `DecisionModel` protocol (system
+   prompt + bounded context in, parsed JSON out). The AgentReasoner holds
+   only frozen tool-name sets — never the ToolRegistry, executor, page,
+   or run state — so the reasoner cannot execute anything by construction.
+2. Model output is untrusted data: ReasonerDecisionSchema (strict,
+   extra=forbid) → decision-type allow-list → registered-tool check →
+   typed BrowserAction → AgentDecision, then ToolRegistry re-validates
+   everything again (defense in depth; D015 gates are unchanged).
+3. Structured OUTPUT schema (response_format json_schema, strict) was
+   chosen over OpenRouter native function-calling: the prompt contract
+   and validation contract are the same pydantic model
+   (build_decision_json_schema), decisions stay one-per-iteration, and
+   the existing ToolRegistry remains the only decision→tool path.
+4. Model failures are EXPLICIT: bounded retries (default 3, cap 5) with
+   the rejection reason fed back on repair attempts; exhaustion returns
+   ReasoningOutcome.model_failure (code DECISION_PARSE_FAILED /
+   DECISION_SCHEMA_INVALID / DECISION_VALIDATION_FAILED, reason prefixed
+   `model_failure:`, decision=None). No deterministic decision is ever
+   fabricated (AGENT_PROTOCOL.md: no silent fallback).
+5. The parser stamps the CURRENT authoritative observation_id onto every
+   browser action; a stale id in the model's dict is overwritten, never
+   trusted. Refs must still exist in that observation (registry +
+   executor verify) — the model cannot smuggle browser state.
+6. Context assembly is minimal and key-whitelisted: recent ToolResult
+   payloads pass through a fixed safe-key list (value-bearing keys like
+   `resolved_value` can never reach the prompt), element/visible-text/
+   result caps are enforced, and only semantic reference NAMES (with
+   sensitivity labels) are exposed — never values, paths, or policy
+   internals.
+7. The OpenRouter adapter is the only OpenRouter touchpoint and fails
+   closed at build time without an API key; the loop itself is proven by
+   the deterministic MockDecisionModel (no key required for tests).
+
+Status: ACCEPTED — implemented in `app/agent/reasoning/*`, covered by
+`tests/unit/test_agent_reasoner.py` (28),
+`tests/unit/test_reasoning_replay.py` (6),
+`tests/unit/test_openrouter_decision_model.py` (10), and
+`tests/synthetic_forms/test_reasoning_loop.py` (4, real Chromium).
