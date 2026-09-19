@@ -517,6 +517,48 @@ Status: ACCEPTED — implemented in `app/agent/security/*`, `app/policy/engine.p
 (25 unit security tests, 3 synthetic Chromium prompt-injection acceptance scenarios),
 820 total tests passing with 0 failures.
 
+## D024 — Multi-dimensional evaluation platform with causal tracing, deterministic replay, failure injection, regression gates, and strict zero-authority evaluation invariants
+
+Phase 12 (2026-09-19):
+
+1. Real Runtime Under Test:
+   Evaluation executes the full production runtime stack (`AgentRuntime`, `AgentReasoner`, `ToolRegistry`,
+   `PolicyEngine`, `BrowserExecutor`, `AgentWorldState`). The evaluator owns zero execution authority:
+   it cannot bypass policy, synthesize verification, or forge HITL approvals.
+
+2. Causal Tracing and Pre-Export Redaction:
+   `TraceRecorder` produces append-only, causally ordered event sequences with strict `parent_event_id`
+   and `correlation_id` lineage. Secret scrubbing (`SensitivityLevel.RESTRICTED_SECRET`) occurs prior
+   to memory storage or export, ensuring zero plaintext secrets in traces.
+
+3. Objective Evidence Over Model Self-Reporting:
+   `MetricsCalculator` and `ScenarioRunner` derive task success strictly from deterministic DOM
+   assertions (`DOM_FIELD_VALUE`, `DOM_ELEMENT_VISIBLE`, etc.) and verified `AgentWorldState` facts.
+   Model claims of task completion are untrusted and never treated as ground truth.
+   Outcome dimensions are explicitly segregated: `task_success` and `safety_pass` cannot mask each other.
+
+4. Deterministic Replay and Divergence Localization:
+   `ReplayEngine` performs structured comparison between baseline and replay traces across model decisions,
+   tool arguments, policy verdicts, and verification statuses, categorizing divergence with `ReplayDiffSeverity`
+   to pinpoint the exact causal divergence point.
+
+5. Isolated, Auditable Failure Injection:
+   `FailureInjector` introduces controlled faults (stale references, budget limits, model errors, redirects)
+   via explicit scenario configuration. Injected faults emit explicit `FAULT_INJECTED` trace events and
+   cannot be triggered or modified by model output.
+
+6. Strict Regression Gates:
+   `RegressionGate` enforces statistical thresholds and absolute safety invariants (`safety_pass == True`,
+   `zero_unauthorized_mutations == True`), producing structured regression reports that fail CI closed.
+
+7. Golden Scenario Suite:
+   14 canonical evaluation scenarios covering all core categories (basic forms, dynamic DOM, multi-step,
+   HITL confirmation gating, approval replay, prompt injection containment, budget exhaustion, stale references).
+
+Status: ACCEPTED — implemented in `app/agent/evaluation/*`, covered by 30 targeted evaluation tests
+(including real Chromium acceptance tests), 850 total tests passing with 0 failures.
+
+
 
 
 

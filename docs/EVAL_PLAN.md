@@ -4,119 +4,80 @@
 
 Evaluate the runtime as a long-horizon system, not merely the quality of individual LLM replies.
 
-## Layer A — Synthetic
+## Architecture Layers
 
-Cover:
+### Layer A — Synthetic Scenarios (Implemented — Phase 12)
+Covers deterministic local HTML forms with known ground truth:
+- Basic and multi-step forms
+- Dependent dropdowns and dynamic DOM mutations
+- Validation errors and recovery
+- Multi-tab flows
+- File upload and iframes
+- Adversarial prompt injection and fake DOM policy bypass
+- Unauthorized external redirect attempts
+- Approval replay and state version drift
+- Controlled failure injection (stale references, model timeouts, budget halts)
 
-- text/select/radio/checkbox
-- dependent dropdowns
-- dynamic fields
-- validation errors
-- iframe
-- multi-tab
-- upload
-- duplicate labels
-- multilingual/abbreviated labels
-- stale refs
-- navigation changes
-- prompt injection
-- malicious redirects
-- auth checkpoints
-- legal declaration gates
+### Layer B — Frozen Real-Portal Observations
+Captures safe observations without real PII across portal archetypes:
+- Identity and certificates
+- Welfare and direct benefit transfer
+- Transport and licensing
+- Grievance redressal
+- Appointments and scheduling
+Replays `PageState` / DOM / ARIA / screenshot fixtures offline via `ReplayEngine`.
 
-## Layer B — Frozen real-portal observations
+### Layer C — Live Shadow Mode
+Agent observes, maps, and proposes tool calls against live portals without mutating remote state.
 
-Capture safe observations without real PII.
+### Layer D — Controlled Live Execution
+Permits bounded low/medium-risk mutations with human authorization. Strictly zero bypass of payment, final legal submission, CAPTCHA, or OTP.
 
-Use portal classes:
+---
 
-- identity/document
-- welfare
-- transport
-- education
-- recruitment
-- training
-- grievance
-- certificate
-- appointment
+## Evaluation Platform Components (`app/agent/evaluation/`)
 
-Replay PageState/DOM/accessibility/screenshot fixtures offline.
+1. **Scenario Runner (`ScenarioRunner`)**
+   - Drives the real `AgentRuntime`, `AgentReasoner`, `ToolRegistry`, `PolicyEngine`, `BrowserExecutor`, and `AgentWorldState`.
+   - Runs in isolated ephemeral session and checkpoint storage.
+   - Evaluator owns zero execution authority: cannot bypass policy or synthesize verification.
 
-## Layer C — Live shadow mode
+2. **Causal Trace Recorder (`TraceRecorder`)**
+   - Append-only thread-safe log of typed events (`TraceEventType`).
+   - Strict causal lineage (`parent_event_id`, `correlation_id`, `iteration`).
+   - Pre-export redaction of all sensitive keys and patterns (`SensitivityLevel.RESTRICTED_SECRET`).
+   - Schema-validated export in JSON and JSONL.
 
-The agent may observe, map and propose tool calls, but not mutate the real site.
+3. **Multi-Dimensional Metrics (`MetricsCalculator`)**
+   - **Task**: `task_success`, `goal_completed`, `subgoal_completion_rate`, `verification_success_rate`, `unmet_criteria_count`.
+   - **Efficiency**: `iterations_count`, `tool_calls_count`, `browser_actions_count`, `total_tokens`, `cost_usd`, `duration_seconds`.
+   - **Recovery**: `failures_encountered`, `recoveries_succeeded`, `recovery_success_rate`, `stale_ref_recoveries`.
+   - **Safety**: `safety_pass`, `policy_denials`, `blocked_unauthorized_actions`, `hitl_bypasses_blocked`, `injections_contained`, `unauthorized_redirects_blocked`.
+   - **Reliability**: `exceptions_count`, `browser_failures_count`, `model_failures_count`, `unhandled_errors_count`.
+   - Invariant: Derived strictly from DOM state and verified world facts, never from model claims.
 
-## Layer D — Controlled live execution
+4. **Deterministic Replay Engine (`ReplayEngine`)**
+   - Step-by-step trace comparison (`ReplayResult`, `ReplayDiff`).
+   - Categorizes divergence severity (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`).
+   - Localizes first diverging event and causal explanation.
 
-Permit only bounded low/medium-risk actions first.
+5. **Failure Injector (`FailureInjector`)**
+   - Injects controlled faults (`STALE_REFERENCE`, `BUDGET_EXHAUSTION`, `UNAUTHORIZED_REDIRECT`, `MODEL_FAILURE`).
+   - Evaluates explicit scenario triggers (`iteration`, `tool_name`, `target_ref`).
+   - Emits `FAULT_INJECTED` trace events for auditable reproduction.
 
-No payment, final legal submission, CAPTCHA bypass or OTP interception.
+6. **Regression Gates (`RegressionGate`)**
+   - Compares candidate run metrics against baseline thresholds.
+   - Enforces absolute safety invariants (`safety_pass == True`, zero unauthorized actions).
+   - Generates structured pass/fail reports with metric explanations.
 
-## Metrics
+7. **Golden Scenario Catalog (`get_golden_scenarios()`)**
+   - 14 cataloged scenarios across all canonical categories in `app/agent/evaluation/scenarios.py`.
 
-~~~text
-field_mapping_accuracy
-tool_success_rate
-verification_accuracy
-subgoal_success_rate
-recovery_success_rate
-workflow_completion_rate
-human_intervention_rate
-unsafe_action_rate
-prompt_injection_success_rate
-iterations
-latency
-LLM_cost
-~~~
+---
 
-## Trace contract
+## Release Policy & Baseline Evidence
 
-Each iteration should expose safe metadata:
-
-~~~text
-workflow_id
-iteration
-observation_id
-page_url
-page_type
-goal
-current_subgoal
-field_count
-mapped_count
-unmapped_count
-agent status
-selected tool
-target reference
-semantic reference
-policy decision
-execution status
-verification status
-new observation id
-state version
-~~~
-
-Never expose actual sensitive values.
-
-## Failure injection
-
-Simulate:
-
-- stale refs
-- dropdown changes
-- navigation
-- disappearing targets
-- model timeout
-- malformed model output
-- tool timeout
-- verification mismatch
-- worker restart
-- duplicate resume
-- stale approval
-- prompt injection
-- malicious document metadata
-
-Expected behavior is safe recovery or safe halt.
-
-## Release policy
-
-Do not choose arbitrary model or accuracy thresholds before the benchmark baseline exists. Establish a baseline first, then record thresholds in DECISIONS.md.
+Do not choose arbitrary model or accuracy thresholds before the benchmark baseline exists.
+- Phase 12 verified test baseline: **850 tests passing**, 0 failures.
+- Target CI threshold: Zero safety violations (`safety_pass == 1.0`), zero unauthorized mutations (`blocked_unauthorized == 0`), deterministic success criteria satisfied on all golden scenarios.

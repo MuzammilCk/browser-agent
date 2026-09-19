@@ -1,8 +1,8 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-19
-Current phase: Phase 11 — Security Hardening (COMPLETE — Provenance-aware trust boundaries, orthogonal trust and sensitivity, structural secret handling, fail-closed schema gates, hardened HITL approval bindings with origin and argument hashes, non-authoritative DOM attributes, defense-in-depth prompt envelopes, immutable runtime execution budgets persisting through checkpoint/resume, and real Chromium adversarial injection & redirect acceptance; full regression suite passing with 0 failures)
-Overall: IN PROGRESS (Phases 0–11 complete)
+Current phase: Phase 12 — Evaluation Platform (COMPLETE — Multi-dimensional evaluation platform, isolated ScenarioRunner operating against the real AgentRuntime stack, causally linked secret-redacted trace recorder, comprehensive metrics calculator without model self-reporting, deterministic ReplayEngine with structured divergence detector, RegressionGate framework with strict statistical/safety invariant policies, stateful FailureInjector with explicit fault triggers, and catalog of 14 golden evaluation scenarios; 30 targeted evaluation tests, 850 total tests passing with 0 failures)
+Overall: IN PROGRESS (Phases 0–12 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 11, 2026-09-19): **820 tests passing** (679 unit + 65 integration + 48 synthetic + 28 prompt_injection). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 12, 2026-09-19): **850 tests passing** (679 unit + 65 integration + 48 synthetic + 28 prompt_injection + 30 evaluation). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -960,7 +960,7 @@ verified by `tests/prompt_injection/test_injection_acceptance.py` (real Chromium
 | 9 Memory | COMPLETE (four layers, write policy, poisoning defenses, loss-aware compaction, deterministic retrieval, PostgreSQL persistence; exit criterion proven with real Chromium + live PostgreSQL multi-turn workflow) |
 | 10 Specialist agents | COMPLETE (restricted agent-as-tools, allowlisted projections, 4 immutable permission classes, escalation defenses, no-swarm/no-mutation isolation; exit criterion proven in real Chromium) |
 | 11 Security hardening | COMPLETE (provenance-aware trust boundaries, orthogonal sensitivity, non-authoritative DOM attributes, fail-closed parameter gates, hardened approval bindings, runtime execution budgets; exit criterion proven in real Chromium) |
-| 12 Evaluation | PARTIAL |
+| 12 Evaluation | COMPLETE (causal trace recording, multidimensional metrics, replay divergence engine, regression gates, failure injection, 14 golden scenarios, real Chromium acceptance; exit criterion proven) |
 | 13 Enterprise runtime | NOT STARTED |
 | 14 Live portal validation | NOT STARTED |
 | 15 Production readiness | NOT STARTED |
@@ -1030,7 +1030,7 @@ Phase 1 completion:
 - [x] policy on every mutation (PolicyEngine wired into BrowserExecutor)
 - [x] verification on every mutation (8 per-action verifiers)
 - [x] durable human interrupts (Phase 8 — PostgreSQL persistence, atomic lease locks, machine-checked approval bindings, crash-safe resume)
-- [ ] prompt-injection suite (stub exists: tests/prompt_injection/)
-- [ ] evaluation metrics (Phase 12)
+- [x] prompt-injection suite (Phase 11 — tests/prompt_injection/ — 28 passing tests)
+- [x] evaluation metrics (Phase 12 — tests/evaluation/ — 30 passing tests)
 - [x] live observation-only validation (tests/real_sites/test_pmkisan_observe.py)
 - [ ] isolated worker runtime (Phase 13)

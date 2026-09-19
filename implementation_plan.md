@@ -676,16 +676,32 @@ Track:
 
 Tasks:
 
-- [ ] scenario runner
-- [ ] replay engine
-- [ ] metrics
-- [ ] regression thresholds
-- [ ] failure injection
-- [ ] trace export
+- [x] scenario runner (`ScenarioRunner` orchestrating real `AgentRuntime`, `AgentReasoner`, `ToolRegistry`, `PolicyEngine`, `BrowserExecutor`, `AgentWorldState`, and isolated test contexts)
+- [x] replay engine (`ReplayEngine` with step-by-step causal divergence detection, `ReplayDiff`, and `ReplayDiffSeverity`)
+- [x] metrics (`MetricsCalculator` measuring task completion, efficiency, recovery, safety invariants, and reliability without relying on model self-reports)
+- [x] regression thresholds (`RegressionGate` enforcing statistical thresholds, absolute invariant gates, and structured regression reports)
+- [x] failure injection (`FailureInjector` with deterministic fault types, trigger conditions, and auditable trace markers)
+- [x] trace export (`TraceRecorder` producing causally-linked, schema-validated JSON and JSONL with `SensitivityLevel.RESTRICTED_SECRET` redaction)
+- [x] golden scenario suite (14 cataloged scenarios across all canonical categories in `app/agent/evaluation/scenarios.py`)
 
 Exit:
 
 Every meaningful runtime change produces comparable evaluation data.
+
+Evidence: Proven by 30 targeted evaluation tests:
+- `tests/evaluation/test_evaluation_acceptance.py` (2 passed in real Chromium):
+  1. Golden Scenario 1 runs against real Chromium and produces complete verified `EvaluationResult` with DOM field validation and metrics.
+  2. Golden Scenario 9 (Prompt Injection Defense) contains malicious page in real Chromium, verifies `PolicyEngine` enforcement of `REQUIRE_CONFIRMATION` and `hitl_interrupt`.
+- `tests/evaluation/test_evaluation_security.py` (3 passed): Evaluator cannot bypass `PolicyEngine`, cannot forge HITL approvals, blocks unauthorized redirects fail-closed.
+- `tests/evaluation/test_failure_injection.py` (3 passed): Failure injection disabled by default, triggers deterministically on iteration and tool, state isolated.
+- `tests/evaluation/test_metrics.py` (2 passed): Multi-dimensional metrics calculation from trace events; metrics never trust model self-reported claims.
+- `tests/evaluation/test_regression_gates.py` (3 passed): Gate passes compliant metrics, fails degraded metrics with structured explanations, marks missing metrics inconclusive.
+- `tests/evaluation/test_replay_engine.py` (4 passed): Matches identical traces, detects tool divergence, policy divergence, and trace truncation.
+- `tests/evaluation/test_scenario_runner.py` (3 passed): Drives real runtime stack, maintains run isolation, handles injected budget faults.
+- `tests/evaluation/test_scenarios.py` (3 passed): Validates all 14 golden scenarios, rejects malformed configs, JSON roundtrip.
+- `tests/evaluation/test_trace_recorder.py` (4 passed): Causal parent/child tracking, schema validation, full event types, JSON/JSONL export.
+- `tests/evaluation/test_trace_redaction.py` (3 passed): Structural and content secret scrubbing; exports contain zero raw secrets.
+Full regression suite: 850 passed, 0 failures.
 
 ---
 
