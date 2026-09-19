@@ -1,8 +1,8 @@
 # BUILD STATUS
 
-Last reconciled: 2026-09-19
-Current phase: Phase 12 — Evaluation Platform (COMPLETE — Multi-dimensional evaluation platform, isolated ScenarioRunner operating against the real AgentRuntime stack, causally linked secret-redacted trace recorder, comprehensive metrics calculator without model self-reporting, deterministic ReplayEngine with structured divergence detector, RegressionGate framework with strict statistical/safety invariant policies, stateful FailureInjector with explicit fault triggers, and catalog of 14 golden evaluation scenarios; 30 targeted evaluation tests, 850 total tests passing with 0 failures)
-Overall: IN PROGRESS (Phases 0–12 complete)
+Last reconciled: 2026-09-20
+Current phase: Phase 13 — Enterprise Runtime (COMPLETE — API Gateway with authenticated/authorized workflow APIs and durable idempotency, Workflow Service owning durable lifecycle, lease/fenced Execution Workers as sole browser-handle owners, PostgreSQL-backed queue with SKIP LOCKED atomic claims, crash/restart recovery, vault boundary with strict secret isolation, append-only redacted audit, tenant isolation, durable cancellation, bounded retries; 148 targeted enterprise tests including live PostgreSQL store tests and real-Chromium acceptance scenarios; 998 total tests passing with 0 failures)
+Overall: IN PROGRESS (Phases 0–13 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 12, 2026-09-19): **850 tests passing** (679 unit + 65 integration + 48 synthetic + 28 prompt_injection + 30 evaluation). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 13, 2026-09-20): **998 tests passing** (679 unit + 65 integration + 48 synthetic + 28 prompt_injection + 30 evaluation + 148 enterprise). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -944,6 +944,109 @@ verified by `tests/prompt_injection/test_injection_acceptance.py` (real Chromium
    - Replaying the old approval raises `APPROVAL_BINDING_MISMATCH` ("state version invalid").
    - Replaying with tampered arguments raises `APPROVAL_BINDING_MISMATCH` ("arguments tampered").
 
+## Phase 13 evidence
+
+Implemented (additive, `app/enterprise/*` — no Phase 1–12 subsystem modified; the worker
+WRAPS the existing runtime rather than adding an alternative execution path):
+
+- `app/enterprise/models.py` — Workflow / WorkflowRun (references agent_run_id +
+  checkpoint_id, never duplicates AgentRunState), 12-state RunStatus lifecycle with an
+  explicit fail-closed RUN_TRANSITIONS table, WorkerLease with monotonic per-run fencing
+  tokens, ExecutionQueueItem (payload carries references only), IdempotencyRecord,
+  AuditEvent, server-side Identity/Role.
+- `app/enterprise/store.py` + `in_memory_store.py` — EnterpriseStore protocol and the
+  semantically faithful in-memory twin (mutual exclusion, token monotonicity, claim-time
+  visibility timeout, idempotent enqueue, append-only audit, durable idempotency).
+- `app/enterprise/postgres_store.py` + `schema.sql` + `schema.py` — production store on
+  the SAME PostgreSQL database as Phase 8: atomic `claim_next_run` (SKIP LOCKED queue claim
+  + lease acquisition in ONE transaction), conditional lease upserts with token monotonicity,
+  fenced run writes validated in SQL, `INSERT ... ON CONFLICT DO NOTHING` idempotency,
+  INSERT-only audit. Tables: workflows, workflow_runs, worker_leases, execution_queue,
+  audit_events, idempotency_keys.
+- `app/enterprise/workflow_service.py` — lifecycle owner (create/schedule/cancel/resume/
+  complete/fail/recover). Every method takes the authenticated Identity and fails closed on
+  tenant mismatch or role. Transitions validated against the table — never coerced.
+  `recover_run` requeues only with NO active lease AND remaining dispatch budget (invariant 17).
+- `app/enterprise/worker.py` + `engine.py` — ExecutionWorker (claim → lease+fencing →
+  execute → renew → checkpoint → release) around WorkerRunEngine, which mirrors the Phase 12
+  ScenarioRunner loop through the REAL stack (AgentRuntime → ToolRegistry → PolicyEngine →
+  BrowserExecutor → verification → WorldState → Phase 8 checkpoint store). LeaseGuard fails
+  closed between iterations; cancellation is polled at safe boundaries; lease-loss stops all
+  browser mutation immediately.
+- `app/enterprise/security.py` — IdentityProvider (bearer tokens → server-side identities;
+  worker ids server-assigned), require_role/require_same_tenant fail-closed checks.
+- `app/enterprise/api/gateway.py` + `api/worker_api.py` — authenticated API surface
+  (POST/GET /workflows, POST /workflows/{id}/runs, GET /runs/{id}, cancel/resume/events;
+  worker claim/heartbeat/complete/fail/pause). Strict extra="forbid" request schemas;
+  strict response schemas (no handles/secrets/checkpoints); durable Idempotency-Key
+  handling; worker reports fencing-validated.
+- `app/enterprise/vault_service.py` — VaultIntegrationService: reference shape validation,
+  per-tenant/user scoping, execution authority = ACTIVE lease + CURRENT fencing token +
+  executable run state; ResolvedSecret returned only in-process; audit metadata without values.
+- `app/enterprise/audit.py` — append-only AuditService: payload redaction via the existing
+  Phase 11/12 `redact_trace_value` before persistence; parent_event_id causality validated
+  in-tenant (dangling/foreign rejected).
+- `app/enterprise/metrics.py` — EnterpriseMetrics counters/gauges/timings for all required
+  Phase 13 operational signals (workflows, runs, leases, stale workers, checkpoint failures,
+  HITL pauses, browser/model/policy/vault failures, queue/execution latency).
+- `app/main.py` + `app/config/settings.py` — enterprise runtime mounted in the FastAPI app
+  (in-memory store by default; PostgresEnterpriseStore swappable); enterprise settings
+  (worker/user tokens, lease TTL, max dispatch attempts) with fail-closed defaults.
+
+### Phase 13 test counts (verified at current HEAD, 2026-09-20)
+
+~~~
+pytest tests/enterprise/ -q
+→ 148 passed in 16.06s (0 failures; 16 files)
+
+pytest tests/enterprise/test_postgres_enterprise_store.py -q
+→ 9 passed in 3.49s (live PostgreSQL)
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ tests/enterprise/ -q
+→ 940 passed in 257.02s
+
+pytest tests/prompt_injection/ tests/evaluation/ -q
+→ 58 passed in 8.04s
+
+FULL REGRESSION: 998 passed, 0 failures
+~~~
+
+### Phase 13 exit criteria (all proven)
+
+1-2. API Gateway + Workflow Service: authenticated/authorized workflow APIs with strict
+     schemas and durable idempotency — `test_api_gateway.py`, `test_workflow_service.py`.
+3-5. Workers own browser execution; single-owner enforced; lease/fencing blocks stale
+     workers — `test_worker_leases.py`, `test_execution_worker.py`,
+     `test_worker_leases.py::TestFencing`.
+6. Durable queue/dispatch — `test_queue.py` (+ live PostgreSQL queue tests).
+7. Crash/restart recovery — `test_crash_recovery.py` + real-Chromium Worker A crash →
+   Worker B resume acceptance (`test_enterprise_acceptance.py::TestWorkerCrashRecoveryChromium`).
+8. Existing checkpoint/HITL semantics authoritative — engine resumes through the EXISTING
+   Phase 8 checkpoint store; `test_hitl_resume.py`.
+9. Approval bindings unchanged (Phase 11 suite still green; enterprise resume revalidates
+   run ownership/approval/state before continuing).
+10-13. Vault isolation — `test_vault_service.py` + `test_acceptance_isolation_vault.py`
+   (real Chromium): secret absent from model context, queue payload, database state, audit, logs.
+14. Tenant isolation server-side — `test_tenant_isolation.py` (workflow/run/memory/
+    checkpoint/audit scoped; guessed IDs return 404 without distinction).
+15. Idempotency — `test_idempotency.py` (workflow creation, run creation, cancel, resume).
+16. Durable cancellation — `test_cancellation.py` (queued cancels immediately; running stops
+    at safe boundary; cancelled runs cannot resume).
+17. Retry cannot duplicate execution — `test_crash_recovery.py::TestTransientFailureSafety`
+    (recover_run refuses while a lease is active).
+18. Budgets survive worker replacement — checkpoint restore preserves iteration/tool-call
+    counters (`test_crash_recovery.py::TestCheckpointRecovery`).
+19. Audit durable, causal, append-only, redacted — `test_audit_persistence.py`.
+20-24. Enterprise security + acceptance — `test_enterprise_security.py` (forged worker
+    identity, queue payload override attempts, model input cannot touch leases/ownership),
+    `test_enterprise_acceptance.py` (real-Chromium full flow, crash recovery, Phase 12
+    compatibility), `test_acceptance_isolation_vault.py` (multi-tenant + vault acceptance).
+25. Phase 12 evaluation functional — `test_enterprise_acceptance.py::TestPhase12Compatibility`
+    (ScenarioRunner drives the real runtime post-enterprise-additions).
+
+Full regression suite: 998 passed, 0 failures (679 unit + 65 integration + 48 synthetic +
+28 prompt_injection + 30 evaluation + 148 enterprise).
+
 ## Phase tracker
 
 | Phase | Status |
@@ -961,7 +1064,7 @@ verified by `tests/prompt_injection/test_injection_acceptance.py` (real Chromium
 | 10 Specialist agents | COMPLETE (restricted agent-as-tools, allowlisted projections, 4 immutable permission classes, escalation defenses, no-swarm/no-mutation isolation; exit criterion proven in real Chromium) |
 | 11 Security hardening | COMPLETE (provenance-aware trust boundaries, orthogonal sensitivity, non-authoritative DOM attributes, fail-closed parameter gates, hardened approval bindings, runtime execution budgets; exit criterion proven in real Chromium) |
 | 12 Evaluation | COMPLETE (causal trace recording, multidimensional metrics, replay divergence engine, regression gates, failure injection, 14 golden scenarios, real Chromium acceptance; exit criterion proven) |
-| 13 Enterprise runtime | NOT STARTED |
+| 13 Enterprise runtime | COMPLETE (API gateway, workflow service, lease/fenced workers, PostgreSQL queue, vault boundary, durable audit, idempotency, cancellation, tenant isolation; real-Chromium acceptance + crash recovery + multi-tenant + vault isolation proven; live PostgreSQL store tests) |
 | 14 Live portal validation | NOT STARTED |
 | 15 Production readiness | NOT STARTED |
 
@@ -1033,4 +1136,4 @@ Phase 1 completion:
 - [x] prompt-injection suite (Phase 11 — tests/prompt_injection/ — 28 passing tests)
 - [x] evaluation metrics (Phase 12 — tests/evaluation/ — 30 passing tests)
 - [x] live observation-only validation (tests/real_sites/test_pmkisan_observe.py)
-- [ ] isolated worker runtime (Phase 13)
+- [x] isolated worker runtime (Phase 13 — app/enterprise/ — lease/fenced ExecutionWorker, single-owner runs, durable queue; 148 passing enterprise tests)

@@ -106,12 +106,53 @@ Stop on:
 
 ## Security release gates
 
-- [ ] injection fixtures pass
-- [ ] secret redaction passes
-- [ ] stale approval tests pass
-- [ ] redirect tests pass
-- [ ] reference-injection tests pass
-- [ ] high-risk gate tests pass
-- [ ] auth challenges remain human-controlled
-- [ ] no arbitrary code tool
-- [ ] audit traces do not leak secrets
+- [x] injection fixtures pass
+- [x] secret redaction passes
+- [x] stale approval tests pass
+- [x] redirect tests pass
+- [x] reference-injection tests pass
+- [x] high-risk gate tests pass
+- [x] auth challenges remain human-controlled
+- [x] no arbitrary code tool
+- [x] audit traces do not leak secrets
+- [x] service-boundary trust tests pass (Phase 13 enterprise suite)
+
+## Service-boundary trust (Phase 13 enterprise runtime)
+
+Trust does not upgrade across service boundaries. Each enterprise component
+keeps exactly the authority it needs and nothing more:
+
+~~~text
+API Gateway      — authenticate, authorize, validate envelopes, idempotency.
+                   NO Playwright, NO browser mutation, NO vault secrets,
+                   NO PolicyEngine/HITL bypass, NO AgentWorldState writes.
+Workflow Service — durable lifecycle + transitions (table-validated).
+                   NO browser access, NO approval fabrication.
+Execution Worker — the ONLY component holding live browser handles.
+                   Executes THROUGH the existing AgentRuntime → ToolRegistry
+                   → PolicyEngine → BrowserExecutor path (no alternative path).
+Vault boundary   — resolves references locally in-process at the worker;
+                   raw values never cross any boundary.
+~~~
+
+Boundary rules enforced by tests:
+
+- identity is server-side only: bearer tokens resolve to identities; request
+  schemas are extra=forbid so clients cannot carry tenant/user/role/worker fields;
+- single-owner execution: one durable lease per run with monotonic fencing
+  tokens; stale workers have their durable writes REJECTED BY THE STORE (worker
+  honesty is never assumed); lease loss stops browser mutation immediately;
+- queue payloads carry references only — never secrets, browser handles, or
+  checkpoint bytes; payloads cannot override tenant or worker authority;
+- tenant isolation is enforced at the store layer (scoped lookups), not by UUID
+  obscurity; cross-tenant access returns not-found without distinction;
+- raw secrets never enter model context, queue payloads, audit payloads, or
+  application logs; vault resolution requires an ACTIVE lease + CURRENT fencing
+  token (possessing a secret grants no authority — approvals remain bound);
+- audit is append-only (INSERT is the only write path), redacted before
+  persistence, and causally linked (dangling/foreign parent events rejected);
+- untrusted input (page content, model output, client bodies) cannot modify
+  leases, workflow ownership, roles, or policy decisions.
+
+Evidence: tests/enterprise/ (148 tests, including live PostgreSQL store tests
+and real-Chromium acceptance scenarios).

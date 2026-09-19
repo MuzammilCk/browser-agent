@@ -558,6 +558,81 @@ Phase 12 (2026-09-19):
 Status: ACCEPTED — implemented in `app/agent/evaluation/*`, covered by 30 targeted evaluation tests
 (including real Chromium acceptance tests), 850 total tests passing with 0 failures.
 
+## D025 — Enterprise runtime: smallest service boundary set, PostgreSQL-backed queue, lease/fencing ownership, and strict secret isolation
+
+Phase 13 (2026-09-19):
+
+1. Minimal Service Boundaries (no microservices for their own sake):
+   The enterprise runtime is a single deployable process by default with five logical
+   components behind explicit boundaries: API Gateway, Workflow Service, durable store
+   (PostgreSQL or in-memory twin), Execution Workers, and the Vault Integration boundary.
+   The API Gateway never executes Playwright, mutates browser state, bypasses PolicyEngine/HITL,
+   resolves raw vault secrets, or touches AgentWorldState. The Workflow Service owns lifecycle
+   state only — no browser access. Exactly one Execution Worker owns a run's browser at any moment.
+
+2. PostgreSQL as the Only Durable Substrate (D007 extended):
+   The queue, leases, workflow/run lifecycle, idempotency, and audit all live in the SAME
+   PostgreSQL database the Phase 8 checkpoint store already uses
+   (`workflows`, `workflow_runs`, `worker_leases`, `execution_queue`, `audit_events`,
+   `idempotency_keys`). No Kafka/RabbitMQ/Redis — a `SKIP LOCKED` transactional queue with
+   visibility timeouts and dead-lettering satisfies every dispatch requirement without a
+   second stateful system.
+
+3. Lease + Fencing Ownership (single-owner invariant):
+   A run is claimed atomically (queue claim + lease acquisition in ONE transaction, `SKIP LOCKED`).
+   Every lease carries a per-run monotonic fencing token. All worker-side durable writes go
+   through `save_run_with_fencing`, which is validated by the STORE — a stale worker with an
+   outdated token has its writes rejected fail-closed; worker honesty is never assumed.
+   Lease renewal failure stops browser execution immediately (LeaseGuard fails closed between
+   iterations) and the worker reports `RECOVERY_REQUIRED`.
+
+4. Worker Wraps, Never Replaces, the Runtime (invariant 4):
+   `WorkerRunEngine` mirrors the Phase 12 ScenarioRunner loop (observe → reason → policy →
+   execute → verify → world update) around the existing AgentRuntime → ToolRegistry →
+   PolicyEngine → BrowserExecutor stack. There is no worker-specific execution path.
+   Resume uses the EXISTING Phase 8 checkpoint store — never a second checkpoint mechanism.
+
+5. Queue Payloads Carry References Only (invariant 5):
+   Queue payloads contain `run_id`, `workflow_id`, `agent_run_id` — never secrets, browser
+   handles, or checkpoint bytes. Only the lease-holding worker process possesses live handles.
+
+6. Vault: Possession Is Not Authority (invariant 11):
+   `VaultIntegrationService` validates reference shape (`USER.*` / `DOCUMENT.*`), scopes to
+   the run's OWN tenant/user (per-tenant `VaultManager` directories), and requires proof of
+   execution authority: an ACTIVE lease with the CURRENT fencing token for THAT run in an
+   executable state. `ResolvedSecret` is handed only to the in-process execution boundary and
+   is never serialized anywhere. Audit metadata records reference + scoping only.
+
+7. Append-Only, Redacted, Causally-Linked Audit (invariants 12/13):
+   `audit_events` has INSERT as the only write path. Payloads pass the Phase 11/12
+   sensitivity redaction (`redact_trace_value`) before persistence. Every event may declare
+   `parent_event_id`; the service rejects dangling or foreign-tenant causality fail-closed.
+
+8. Server-Side Identity Only (invariant 15):
+   `IdentityProvider` resolves bearer tokens to server-side identities. Request schemas are
+   `extra="forbid"`, so clients cannot even carry tenant/user/role/worker fields. Roles are
+   limited to USER / WORKER / ADMIN — each with concrete runtime meaning, no decorative RBAC.
+   Worker ids are server-assigned at token registration.
+
+9. Durable Idempotency and Bounded Retries (invariants 16/17):
+   Mutating endpoints accept an `Idempotency-Key` header; records persist per (key, tenant)
+   with the request hash — key reuse with a different body fails 422. Service-level retries
+   (`recover_run`) require NO active lease AND remaining dispatch budget before requeueing;
+   agent recovery, worker retry, and service retry budgets remain distinct layers.
+
+10. Cancellation Is Durable and Terminal (no accidental resume):
+    Queued runs cancel immediately; running runs flip to `CANCELLATION_REQUESTED`, observed by
+    the worker at safe boundaries. Terminal runs never transition again — a restart is a NEW run.
+
+11. Phase 12 Evaluation Unaffected:
+    The evaluator keeps driving the real `AgentRuntime` through `ScenarioRunner`. The enterprise
+    engine reuses the same stack and trace conventions; no evaluation bypass path exists.
+
+Status: ACCEPTED — implemented in `app/enterprise/*`, covered by 148 targeted tests
+(16 test files: gateway, workflow service, leases, queue, worker, crash recovery, HITL resume,
+idempotency, tenant isolation, audit persistence, vault, security, cancellation, live PostgreSQL
+store, and two real-Chromium acceptance scenarios), 998 total tests passing with 0 failures.
+
 
 
 

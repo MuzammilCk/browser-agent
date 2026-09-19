@@ -289,3 +289,29 @@ AgentRuntime
   ├── Memory
   └── Durable interrupts
 ~~~
+
+## Enterprise runtime (Phase 13)
+
+The single-process development runtime gained enterprise service boundaries
+(logical components, one deployable by default; PostgresEnterpriseStore is the
+production swap-in):
+
+~~~text
+API Gateway (authn/authz, strict schemas, idempotency)
+  ↓
+Workflow Service (durable workflow/run lifecycle, no browser access)
+  ↓
+PostgreSQL store + SKIP LOCKED queue
+  ↓
+Execution Worker (lease + fencing; ONLY live browser-handle owner)
+  ↓
+AgentRuntime → ToolRegistry → PolicyEngine → BrowserExecutor (unchanged)
+  ↓
+Vault boundary (in-process secret resolution) + append-only redacted audit
+~~~
+
+Invariants: exactly one worker owns a run's browser at a time; stale workers
+are rejected by the store (fencing), not by worker honesty; queue payloads
+carry references only; raw secrets never cross any boundary; audit is
+append-only, causal, and redacted; Phase 8 checkpoints remain authoritative
+for resume. Decision record: docs/DECISIONS.md D025.

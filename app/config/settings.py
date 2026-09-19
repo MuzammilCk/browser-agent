@@ -117,6 +117,31 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Phase 13 — Enterprise runtime
+    enterprise_worker_token: str = Field(
+        default="",
+        description=(
+            "Bearer token required for enterprise worker endpoints "
+            "(/enterprise/worker/*). Empty disables worker registration "
+            "(fail closed for out-of-process workers)."
+        ),
+    )
+    enterprise_user_token: str = Field(
+        default="",
+        description=(
+            "Bearer token for enterprise client APIs. Empty requires "
+            "per-identity registration via IdentityProvider before use."
+        ),
+    )
+    enterprise_lease_seconds: float = Field(
+        default=30.0, ge=1.0,
+        description="Execution lease TTL for enterprise workers",
+    )
+    enterprise_max_dispatch_attempts: int = Field(
+        default=3, ge=1,
+        description="Bounded service-level dispatch retries before dead-letter",
+    )
+
     # Paths
     data_dir: Path = Field(default=PROJECT_ROOT / "data")
     docs_dir: Path = Field(default=PROJECT_ROOT / "docs")

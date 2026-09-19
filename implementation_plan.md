@@ -11,10 +11,11 @@ Phase 5 — Goal / Plan / Subgoal (COMPLETE)
 Phase 6 — WorldState (COMPLETE)  
 Phase 7 — Reflection/Recovery (COMPLETE)  
 Phase 8 — Durable Human Interrupts (COMPLETE)  
-Phase 9 — Memory + Compaction (COMPLETE)  
-Phase 10 — Restricted Specialist Agents (COMPLETE)  
-Phase 11 — Security Hardening (COMPLETE)  
-Overall: IN PROGRESS (Phases 0–11 complete; Phase 12 next)  
+Phase 9 — Memory + Compaction (COMPLETE)Phase 10 — Restricted Specialist Agents (COMPLETE)   
+Phase 11 — Security Hardening (COMPLETE)   
+Phase 12 — Evaluation Platform (COMPLETE)   
+Phase 13 — Enterprise Runtime (COMPLETE)   
+Overall: IN PROGRESS (Phases 0–13 complete; Phase 14 next)     
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -740,6 +741,89 @@ Requirements:
 - health checks
 
 Do not implement before Phases 2–12 prove the local runtime.
+
+### Phase 13 implementation (COMPLETE, 2026-09-20)
+
+Implemented as a single deployable process with five logical components behind
+explicit boundaries (`app/enterprise/*`, additive — no Phase 1–12 subsystem modified):
+
+- [x] Service/domain models (models.py: Workflow, WorkflowRun referencing — never
+      duplicating — AgentRunState; 12-state RunStatus lifecycle with explicit
+      fail-closed RUN_TRANSITIONS table; WorkerLease with monotonic fencing tokens;
+      ExecutionQueueItem with references-only payloads; IdempotencyRecord; AuditEvent)
+- [x] Workflow persistence/state machine (store protocol + in-memory twin +
+      PostgreSQL implementation on the SAME database as the Phase 8 checkpoint store;
+      workflow_service.py owns all lifecycle transitions, validated against the table)
+- [x] Worker lease/fencing (atomic claim = queue claim + lease acquisition in ONE
+      transaction; per-run monotonic fencing tokens; ALL worker-side durable writes
+      go through save_run_with_fencing validated by the store — stale workers fail closed)
+- [x] Durable queue/dispatch (PostgreSQL SKIP LOCKED queue with visibility timeout,
+      bounded attempts, dead-letter state, idempotent enqueue — no Kafka/RabbitMQ/Redis;
+      decision recorded in docs/DECISIONS.md D025)
+- [x] Execution Worker wrapper around existing AgentRuntime (worker.py + engine.py:
+      claim → lease+fencing → verify → load checkpoint → run/resume the REAL stack
+      AgentRuntime → ToolRegistry → PolicyEngine → BrowserExecutor → verification →
+      WorldState → Phase 8 checkpoint → release; NO alternative execution path)
+- [x] Crash/recovery semantics (lease reaper flips to RECOVERY_REQUIRED and requeues;
+      service.recover_run requeues only with no active lease + remaining dispatch
+      budget; Worker B resumes from the latest Phase 8 checkpoint with budget/world
+      state preserved; the last browser mutation is never blindly replayed)
+- [x] API Gateway (POST/GET /workflows, POST /workflows/{id}/runs, GET /runs/{id},
+      cancel/resume/events; worker claim/heartbeat/complete/fail/pause; strict
+      extra=forbid request schemas; strict response schemas — no handles/secrets/
+      checkpoints/policy internals; gateway never executes Playwright, never touches
+      browser state, never resolves raw vault secrets)
+- [x] Authentication/authorization (IdentityProvider resolves bearer tokens to
+      server-side identities; worker ids server-assigned; roles USER/WORKER/ADMIN
+      only, each with concrete runtime meaning; every service method fails closed on
+      tenant mismatch or wrong role; client bodies cannot carry tenant/user/role fields)
+- [x] Vault abstraction + integration boundary (vault_service.py: reference shape
+      validation USER.*/DOCUMENT.*; per-tenant/user scoping; execution authority =
+      ACTIVE lease + CURRENT fencing token + executable run state; ResolvedSecret
+      delivered only in-process; audit metadata without values)
+- [x] Audit persistence (append-only audit_events — INSERT is the only write path;
+      payloads redacted via the existing Phase 11/12 redact_trace_value BEFORE
+      persistence; parent_event_id causality validated in-tenant, dangling/foreign
+      rejected fail-closed)
+- [x] Idempotency/cancellation/retry (durable Idempotency-Key handling for workflow
+      creation, run creation, cancel, resume; key reuse with a different body → 422;
+      queued runs cancel immediately, running runs stop at safe boundaries; terminal
+      runs never resume; service/worker/agent recovery budgets remain distinct layers)
+- [x] Tenant isolation enforcement (tenant-scoped lookups at the store level —
+      cross-tenant access returns not-found without distinction; queue claim is
+      tenant-restricted when the worker is; audit reads are tenant-scoped)
+- [x] Enterprise security hardening (forged worker identity rejected; queue payload
+      cannot override tenant/worker authority; model/untrusted input cannot touch
+      leases or workflow ownership; stale fencing tokens rejected at the store)
+- [x] Integration tests (148 enterprise tests across 16 files:
+      test_api_gateway, test_workflow_service, test_worker_leases, test_execution_worker,
+      test_queue, test_vault_service, test_audit_persistence, test_tenant_isolation,
+      test_idempotency, test_crash_recovery, test_hitl_resume, test_enterprise_security,
+      test_cancellation, test_postgres_enterprise_store, test_enterprise_acceptance,
+      test_acceptance_isolation_vault)
+- [x] Real Chromium enterprise acceptance (test_enterprise_acceptance.py:
+      API → workflow → durable run → queue → worker → AgentRuntime → real Chromium →
+      ToolRegistry → PolicyEngine → BrowserExecutor → verification → WorldState →
+      checkpoint/audit → completion; Worker A crash → lease expiry → Worker B claim →
+      higher fencing token → checkpoint resume → safe completion; stale Worker A
+      resurrected write rejected fail-closed)
+- [x] Phase 12 evaluation compatibility (test_enterprise_acceptance.py::
+      TestPhase12Compatibility — ScenarioRunner still drives the real AgentRuntime;
+      the enterprise engine mirrors the same loop conventions; no bypass path)
+- [x] Control-plane reconciliation (docs/DECISIONS.md D025; docs/BUILD_STATUS.md
+      Phase 13 evidence; this plan section)
+- [x] Full regression (998 passed, 0 failures: 679 unit + 65 integration +
+      48 synthetic + 28 prompt_injection + 30 evaluation + 148 enterprise)
+
+Deviations from the original Phase 13 sketch (documented, intentional):
+- Queue is PostgreSQL-backed (SKIP LOCKED) rather than a separate message broker —
+  smallest production-appropriate dispatch abstraction (AGENTS.md rule 18/19).
+- Default deployment is one process with the in-memory store; PostgresEnterpriseStore
+  is the production swap-in via set_enterprise_state — enterprise boundaries are
+  logical, not microservice-proliferation.
+- Retention/deletion and health-check endpoints were NOT built in Phase 13 (they are
+  Phase 15 enterprise-definition-of-done items per the plan); /health already exists
+  from the pre-Phase-13 app.
 
 ---
 

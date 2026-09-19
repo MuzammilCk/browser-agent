@@ -42,6 +42,51 @@ from app.api.vault_routes import router as vault_router
 app.include_router(api_router)
 app.include_router(vault_router)
 
+# ── Phase 13: enterprise runtime API (gateway + worker endpoints) ──
+
+from fastapi import FastAPI as _FastAPI
+
+
+def mount_enterprise_runtime(target: _FastAPI) -> None:
+    """Initialize the enterprise runtime (Phase 13) and mount its routers.
+
+    Uses the in-memory store by default so local development works
+    without configuration; production deployments swap in
+    PostgresEnterpriseStore via set_enterprise_state(store=...).
+    """
+    from app.enterprise.api.gateway import router as enterprise_router
+    from app.enterprise.api.gateway import set_enterprise_state
+    from app.enterprise.api.worker_api import worker_router
+    from app.enterprise.audit import AuditService
+    from app.enterprise.in_memory_store import InMemoryEnterpriseStore
+    from app.enterprise.security import IdentityProvider
+    from app.enterprise.workflow_service import WorkflowService
+
+    store = InMemoryEnterpriseStore()
+    audit = AuditService(store)
+    service = WorkflowService(store, audit)
+    provider = IdentityProvider()
+
+    settings = get_settings()
+    if settings.enterprise_user_token:
+        provider.register_principal(
+            settings.enterprise_user_token,
+            tenant_id="default",
+            subject_id="enterprise-user",
+        )
+    if settings.enterprise_worker_token:
+        provider.register_worker(settings.enterprise_worker_token)
+
+    set_enterprise_state(
+        store=store, identity_provider=provider,
+        service=service, audit=audit,
+    )
+    target.include_router(enterprise_router)
+    target.include_router(worker_router)
+
+
+mount_enterprise_runtime(app)
+
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
