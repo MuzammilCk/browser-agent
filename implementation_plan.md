@@ -175,17 +175,43 @@ Initial tools are defined in context.md.
 
 Tasks:
 
-- [ ] Tool protocol/base
-- [ ] registry
-- [ ] adapt existing executor operations
-- [ ] strict schemas
-- [ ] permission metadata
-- [ ] tool-result normalization
-- [ ] tool permission tests
+- [x] Tool protocol/base (app/agent/tools/base.py: Tool ABC, ToolMetadata,
+      ToolCall, ToolResult, ToolContext; validate→execute→normalize template)
+- [x] registry (ToolRegistry: catalog + fail-closed execution gate —
+      TOOL_NOT_FOUND / TOOL_SCHEMA_INVALID / INVALID_TOOL_CALL /
+      MISSING_CONTEXT; duplicate registration raises)
+- [x] adapt existing executor operations (14 browser tools delegating to
+      BrowserExecutor.execute — policy + verification reused, not duplicated;
+      navigate via BrowserManager trusted-domain gate)
+- [x] strict schemas (pydantic input schemas per tool; output schema
+      validated at the Tool base — malformed tool output fails closed)
+- [x] permission metadata (read_only, destructive, requires_user_interaction,
+      interrupt_behavior, policy_class, concurrency, accepts_browser_action)
+- [x] tool-result normalization (stable ToolResult: error_code taxonomy incl.
+      POLICY_DENIED / CONFIRMATION_REQUIRED / USER_ACTION_REQUIRED /
+      VERIFICATION_FAILED; policy_allowed + verification_status promoted to
+      first-class fields; fresh post_observation carried to the next decision)
+- [x] tool permission tests (tests/unit/test_tool_registry.py: 31 tests)
 
 Exit:
 
 A synthetic agent can complete a multi-step form through typed tool calls.
+
+Evidence (verified at current HEAD, 2026-09-19): deterministic driver (NO LLM)
+completes the multistep.html wizard in real Chromium using only typed
+ToolCalls through ToolRegistry.execute — observe_page ×3, fill_field ×4,
+select_option ×1, click ×2, all schema-validated, executed via the existing
+BrowserExecutor (policy + verification intact), each followed by fresh
+post-action observations, ending on the review/submit step (10/10 results
+successful; WorkflowState updated only from ToolResults).
+tests/synthetic_forms/test_tool_agent.py::
+TestMultiStepFormViaTypedToolCalls::test_completes_all_three_steps — PASSED.
+AgentDecision widened backward-compatibly (tool_name + arguments); all 48
+Phase 2 runtime tests pass unchanged. Full regression: 589 passed, 0 failed
+(495 unit + 59 integration + 35 synthetic).
+Note: metadata is descriptive; PolicyEngine stays authoritative. Agent-services
+tools (reflect/replan/verify_goal) are Phases 5/7; handoff_browser and
+specialist tools are Phase 10.
 
 ---
 

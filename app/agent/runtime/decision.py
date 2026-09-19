@@ -40,12 +40,14 @@ class AgentDecision(BaseModel):
     malformed tool decision fails validation at the contract boundary —
     before any policy or execution layer sees it.
 
-    Phase 2 boundaries:
+    Phase 3 widening (backward-compatible): TOOL_CALL decisions may carry
+    a registered ``tool_name`` + ``arguments``. Browser-family tools ALSO
+    carry the typed ``action`` (the Tool Registry cross-checks the pair
+    and fails closed on mismatch).
+
+    Phase 2 boundaries (unchanged):
     - No HANDOFF: specialist agents are Phase 10; accepting one now would
       authorize a concept the runtime cannot yet scope.
-    - ``tool_name`` is reserved for Phase 3's Tool Registry; tool_call
-      decisions currently carry a BrowserAction, which is what the
-      existing executor consumes.
     """
 
     decision_type: AgentDecisionType
@@ -55,7 +57,15 @@ class AgentDecision(BaseModel):
     # TOOL_CALL
     action: BrowserAction | None = Field(
         default=None,
-        description="Browser action for tool_call decisions (Phase 3 widens to tools)",
+        description="Typed browser action for browser-family tools (Phase 3)",
+    )
+    tool_name: str | None = Field(
+        default=None,
+        description="Registered tool name for TOOL_CALL decisions (Phase 3 registry)",
+    )
+    arguments: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Tool arguments validated against the tool's input schema",
     )
 
     # REPLAN
@@ -93,7 +103,10 @@ class AgentDecision(BaseModel):
     def validate_decision_fields(self) -> AgentDecision:
         """Decision-type-specific required fields (fail closed)."""
         if self.decision_type == AgentDecisionType.TOOL_CALL and self.action is None:
-            raise ValueError("tool_call decisions require an action")
+            if not self.tool_name:
+                raise ValueError(
+                    "tool_call decisions require an action or a registered tool_name"
+                )
         if self.decision_type == AgentDecisionType.ASK_USER and not self.question:
             raise ValueError("ask_user decisions require a question")
         if self.decision_type in (

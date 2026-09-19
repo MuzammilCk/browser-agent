@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 2, 2026-09-19): **554 tests passing** (464 unit + 59 integration + 31 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 3, 2026-09-19): **589 tests passing** (495 unit + 59 integration + 35 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -185,6 +185,86 @@ and replays the full event log with sequence continuity (+1 `RUN_RESTORED`).
 | AgentRunner compatibility facade | ✅ Done | RuntimeBackedAgentRunner, TestFacade (is-a + run/resume tracking) |
 | Lifecycle tests | ✅ Done | 48 tests in tests/unit/test_agent_runtime.py |
 
+## Phase 3 evidence
+
+Implemented (typed model-facing Tool Registry; NO LLM loop, NO new framework,
+NO Playwright code outside the existing executor):
+
+- `app/agent/tools/base.py` — `ToolMetadata` (name/description/family, strict
+  input+output schemas, read_only, destructive, requires_user_interaction,
+  interrupt_behavior, policy_class, concurrency, accepts_browser_action),
+  `ToolCall` (tool_name + arguments + typed BrowserAction), `ToolResult`
+  (success/error_code/message/payload/observation_id/post_observation/
+  policy_allowed/verification_status), `ToolContext` (the ONLY handle a tool
+  gets: observation, page, executor, observer, resolvers — no path to
+  AgentRunState), `Tool` ABC with validate→execute→normalize template,
+  strict pydantic output models per tool family.
+- `app/agent/tools/registry.py` — `ToolRegistry`: model-facing catalog + the
+  ONE fail-closed execution gate (unknown tool → TOOL_NOT_FOUND; browser tool
+  without typed action → TOOL_SCHEMA_INVALID; stray action on non-action tool
+  → INVALID_TOOL_CALL; missing observation → MISSING_CONTEXT; schema-invalid
+  arguments → TOOL_SCHEMA_INVALID; duplicate registration raises).
+- `app/agent/tools/browser_tools.py` — 14 adapters over the EXISTING
+  foundation (observe_page, inspect_field, inspect_options, navigate,
+  wait_for_state, click, fill_field, select_option, check_control,
+  uncheck_control, upload_document, scroll, press_key, go_back). All
+  mutations delegate to BrowserExecutor.execute (PolicyEngine + document
+  policy + verification intact, not duplicated); navigate reuses
+  BrowserManager's trusted-domain gate; read tools reuse PageObserver.
+- `app/agent/tools/user_tools.py` — request_user_input /
+  request_authentication / request_confirmation (pauses-run metadata;
+  handoff_browser deliberately absent until Phase 10).
+- `app/agent/tools/vault_tools.py` — resolve_user_reference,
+  resolve_document_reference, inspect_available_documents (sensitive
+  refs return a resolution HANDLE; raw values/paths never appear in
+  results).
+- `app/agent/runtime/decision.py` — AgentDecision widened backward-
+  compatibly: TOOL_CALL may carry tool_name + arguments (48 Phase 2
+  runtime tests still pass unchanged).
+
+### Phase 3 test counts (verified at current HEAD, 2026-09-19)
+
+```
+pytest tests/unit/test_tool_registry.py -q
+→ 31 passed in 0.49s
+
+pytest tests/synthetic_forms/test_tool_agent.py -q
+→ 4 passed in 9.35s (real Chromium)
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 589 passed in 148.50s
+```
+
+### Phase 3 exit criterion
+
+"A synthetic agent can complete a multi-step form through typed tool calls":
+verified by `tests/synthetic_forms/test_tool_agent.py::
+TestMultiStepFormViaTypedToolCalls::test_completes_all_three_steps` — a
+deterministic driver (NO LLM, Phase 4) drives the multistep.html wizard
+directly against Chromium: every action is a typed ToolCall (observe_page ×3,
+fill_field ×4, select_option ×1, click ×2) validated by the registry, executed
+by the existing BrowserExecutor (policy + verification intact), followed by
+fresh post-action observations, ending on the review/submit step with
+10/10 successful results and WorkflowState updated only from ToolResults.
+
+### Phase 3 status
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| Tool protocol/base | ✅ Done | app/agent/tools/base.py, TestToolProtocol |
+| Tool metadata model | ✅ Done | ToolMetadata (all 8 context.md fields + accepts_browser_action) |
+| ToolRegistry | ✅ Done | registry.py, TestRegistryGates (fail-closed) |
+| Strict input/output schemas | ✅ Done | pydantic per tool; output schema enforced |
+| Permission metadata | ✅ Done | read_only/destructive/requires_user_interaction/interrupt/policy_class/concurrency, TestMetadataPermissionModel |
+| Tool-result normalization | ✅ Done | ToolResult stable shape incl. policy_allowed + verification_status |
+| Existing capabilities adapted | ✅ Done | BrowserExecutor/PageObserver/BrowserManager reused, zero duplicated policy/verification |
+| Permission/registry tests | ✅ Done | 31 unit tests |
+| Multi-step exit criterion | ✅ Done | 4 synthetic tests incl. runtime-lifecycle integration |
+
+Deliberately deferred: agent-services family (reflect/replan/verify_goal —
+Phases 5/7), handoff_browser + specialist tools (Phase 10), ToolContext
+auto-derivation inside AgentRuntime (natural Phase 4 loop wiring).
+
 ## Phase tracker
 
 | Phase | Status |
@@ -192,7 +272,7 @@ and replays the full event log with sequence continuity (+1 `RUN_RESTORED`).
 | 0 Control plane | COMPLETE |
 | 1 Browser foundation | COMPLETE |
 | 2 AgentRuntime | COMPLETE (deterministic core; LLM loop is Phase 4) |
-| 3 Tool Registry | NOT STARTED |
+| 3 Tool Registry | COMPLETE (typed registry + adapters; LLM loop is Phase 4) |
 | 4 OpenRouter agent loop | NOT STARTED |
 | 5 Goal/Subgoal | NOT STARTED |
 | 6 WorldState | NOT STARTED |
