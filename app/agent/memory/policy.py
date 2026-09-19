@@ -175,6 +175,22 @@ class MemoryWritePolicy:
                     reason="Untrusted page content cannot claim VERIFIED epistemic status.",
                 )
 
+        # Check trust domain if present in details
+        details_domain = candidate.details.get("trust_domain") if isinstance(candidate.details, dict) else None
+        if details_domain and str(details_domain).startswith("untrusted_"):
+            if candidate.proposed_status == EpistemicStatus.VERIFIED:
+                return PolicyVerdict(
+                    allowed=False,
+                    rejection_code=MemoryPolicyRejectionCode.UNVERIFIED_STATUS_MASQUERADE,
+                    reason="Untrusted data source cannot claim VERIFIED epistemic status.",
+                )
+            if candidate.memory_type in (MemoryType.EXPERIENCE, MemoryType.SEMANTIC):
+                return PolicyVerdict(
+                    allowed=False,
+                    rejection_code=MemoryPolicyRejectionCode.UNTRUSTED_SOURCE_PRIVILEGE_ESCALATION,
+                    reason="Untrusted source cannot write durable semantic or experience memory.",
+                )
+
         # 4. Epistemic Status Gate
         # Model inferences cannot claim VERIFIED status without deterministic runtime verification
         effective_status = candidate.proposed_status

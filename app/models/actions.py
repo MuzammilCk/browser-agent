@@ -82,6 +82,8 @@ class BrowserAction(BaseModel):
         description="Observation ID this action targets (for stale ref prevention)",
     )
 
+    model_config = {"extra": "forbid"}
+
     @model_validator(mode="after")
     def validate_action_fields(self) -> BrowserAction:
         """Enforce action-specific required field combinations + sensitive policy."""

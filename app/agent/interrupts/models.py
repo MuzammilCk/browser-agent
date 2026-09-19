@@ -100,6 +100,11 @@ class ApprovalBinding(BaseModel):
         default_factory=dict,
         description="Safe non-sensitive metadata (no secrets/passwords/OTPs)",
     )
+    session_id: str | None = Field(default=None, description="Session this approval authorizes")
+    tool_name: str | None = Field(default=None, description="Exact tool name approved")
+    arguments_hash: str | None = Field(default=None, description="SHA-256 hash of normalized tool arguments")
+    origin_url: str | None = Field(default=None, description="Origin URL on which action was approved")
+    policy_decision: str = Field(default="require_confirmation", description="Policy decision that triggered approval")
 
     def is_expired(self, now: datetime | None = None) -> bool:
         """Check if approval has passed its expiration timestamp."""
@@ -114,6 +119,10 @@ class ApprovalBinding(BaseModel):
         current_target_identity: str,
         current_semantic_id: str | None = None,
         now: datetime | None = None,
+        *,
+        current_tool_name: str | None = None,
+        current_arguments_hash: str | None = None,
+        current_origin_url: str | None = None,
     ) -> tuple[bool, str]:
         """Validate if approval remains valid against current state.
 
@@ -145,6 +154,26 @@ class ApprovalBinding(BaseModel):
                 False,
                 f"semantic_id mismatch: approved for '{self.semantic_id}', current is '{current_semantic_id}'",
             )
+
+        if self.tool_name and current_tool_name and self.tool_name != current_tool_name:
+            return (
+                False,
+                f"tool mismatch: approved for '{self.tool_name}', requested '{current_tool_name}'",
+            )
+
+        if self.arguments_hash and current_arguments_hash and self.arguments_hash != current_arguments_hash:
+            return (
+                False,
+                f"arguments tampered: arguments hash mismatch",
+            )
+
+        if self.origin_url and current_origin_url:
+            from urllib.parse import urlparse
+            if urlparse(self.origin_url).netloc.lower() != urlparse(current_origin_url).netloc.lower():
+                return (
+                    False,
+                    f"origin mismatch: approved on '{self.origin_url}', current is '{current_origin_url}'",
+                )
 
         return True, "valid"
 

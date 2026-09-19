@@ -310,9 +310,21 @@ class AgentRunState(BaseModel):
 
     # Cost / usage
     usage: UsageCounters = Field(default_factory=UsageCounters)
+    budget_state: dict[str, Any] | None = Field(
+        default=None, description="Durable runtime execution budget tracker state (Phase 11)"
+    )
 
     # Hierarchy metadata
     agent: AgentIdentity = Field(default_factory=AgentIdentity)
+
+    def get_budget_tracker(self, budget: Any = None) -> Any:
+        from app.agent.security.budget import RuntimeBudgetTracker
+        if self.budget_state:
+            return RuntimeBudgetTracker.from_dict(self.budget_state)
+        return RuntimeBudgetTracker(budget=budget)
+
+    def save_budget_tracker(self, tracker: Any) -> None:
+        self.budget_state = tracker.to_dict()
 
     def is_terminal(self) -> bool:
         return self.lifecycle in TERMINAL_LIFECYCLE_STATES

@@ -12,7 +12,9 @@ Phase 6 — WorldState (COMPLETE)
 Phase 7 — Reflection/Recovery (COMPLETE)  
 Phase 8 — Durable Human Interrupts (COMPLETE)  
 Phase 9 — Memory + Compaction (COMPLETE)  
-Overall: IN PROGRESS (Phases 0–9 complete; Phase 10 next)  
+Phase 10 — Restricted Specialist Agents (COMPLETE)  
+Phase 11 — Security Hardening (COMPLETE)  
+Overall: IN PROGRESS (Phases 0–11 complete; Phase 12 next)  
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -624,20 +626,28 @@ Threats:
 
 Tasks:
 
-- [ ] trusted/untrusted context boundaries
-- [ ] injection fixtures
-- [ ] malicious document fixtures
-- [ ] redirect tests
-- [ ] reference validation
-- [ ] approval binding to action + target + state version
-- [ ] per-tool permissions
-- [ ] rate/iteration/cost limits
-- [ ] secret redaction tests
-- [ ] fail-closed tests
+- [x] trusted/untrusted context boundaries (TrustDomain, SensitivityLevel, RuntimeProvenance, envelope wrappers)
+- [x] injection fixtures (tests/prompt_injection/pages/adversarial_injection.html)
+- [x] malicious document fixtures (defense-in-depth XML escaping and untrusted metadata envelope wrap_document_data)
+- [x] redirect tests (PolicyIntegrityGuard validate_navigation_destination + real Chromium redirect blocking acceptance test)
+- [x] reference validation (fail-closed strict schema extra="forbid" on all tools and BrowserAction)
+- [x] approval binding to action + target + state version (ApprovalIntegrityGuard with SHA-256 arguments_hash, origin_url, policy_decision, and approved_by validation)
+- [x] per-tool permissions (ToolRegistry extra-parameter rejection and PolicyIntegrityGuard injection-attribute stripping)
+- [x] rate/iteration/cost limits (RuntimeBudgetTracker with monotonic wall-clock, actions, tokens, specialist calls, error budgets and checkpoint persistence)
+- [x] secret redaction tests (structural classification, vault token redaction, regex scrubbing defense-in-depth)
+- [x] fail-closed tests (25 unit tests + 3 real Chromium acceptance scenarios)
 
 Exit:
 
 Malicious page content cannot upgrade its permissions or bypass policy.
+
+Evidence: Proven by 28 targeted security tests:
+- tests/prompt_injection/test_security_hardening.py (25 passed in 0.50s): Trust vs Sensitivity separation, immutable runtime provenance, structural secret protection, USER_VERIFIED / STATE_VERIFIED epistemic invariants, fail-closed schema gates (extra="forbid"), prompt envelope escaping, SHA-256 approval binding validation, and monotonic budget enforcement with checkpoint persistence.
+- tests/prompt_injection/test_injection_acceptance.py (3 passed in 15.01s, real Chromium):
+  1. Adversarial page with hidden prompt injection claiming "action pre-approved" and spoofed DOM attributes fails closed; PolicyEngine enforces REQUIRE_CONFIRMATION; spoofed approval rejected.
+  2. Malicious page attempting external redirect to evil-attacker.com blocked fail-closed with UNAUTHORIZED_REDIRECT.
+  3. Action parameter tampering, state version drift, or target change invalidates approved bindings via SHA-256 mismatch.
+Full regression suite: 820 passed, 0 failures.
 
 ---
 

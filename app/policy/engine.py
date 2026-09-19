@@ -167,7 +167,7 @@ def _classify_action_risk(
         if target:
             for el in page_state.elements:
                 if el.ref == target:
-                    name = (el.accessible_name or "").lower()
+                    name = (el.accessible_name or el.label_text or el.html_name or "").lower()
                     # Check payment keywords
                     if any(kw in name for kw in PAYMENT_KEYWORDS):
                         return RiskLevel.HIGH_RISK
@@ -251,6 +251,18 @@ class PolicyEngine:
 
         Returns PolicyResult with decision and reason.
         """
+        # Step 0: Security guard checks (Phase 11)
+        from app.agent.security.policy_guard import PolicyIntegrityGuard, is_trusted_domain
+        PolicyIntegrityGuard.sanitize_action_for_policy(action)
+
+        # Check domain security if page_state is present
+        if page_state and page_state.url and not is_trusted_domain(page_state.url):
+            return PolicyResult(
+                decision=PolicyDecision.DENY,
+                risk_level=RiskLevel.HIGH_RISK,
+                reason=f"Current URL '{page_state.url}' is not an authorized trusted domain",
+            )
+
         # Step 1: Check authentication context (per audit #23)
         if page_state:
             auth_result = _check_authentication_context(page_state)

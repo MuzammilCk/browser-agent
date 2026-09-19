@@ -125,6 +125,16 @@ class ToolRegistry:
 
         # Schema validation (second boundary — the Tool base validates too).
         try:
+            schema_fields = set(meta.input_schema.model_fields.keys())
+            actual_fields = set((call.arguments or {}).keys())
+            extra = actual_fields - schema_fields
+            if extra:
+                return ToolResult(
+                    tool_name=call.tool_name,
+                    success=False,
+                    error_code="TOOL_SCHEMA_INVALID",
+                    message=f"Forbidden/unknown arguments for {call.tool_name}: {sorted(extra)}",
+                )
             args = meta.input_schema.model_validate(call.arguments or {})
         except Exception as e:
             return ToolResult(

@@ -73,21 +73,28 @@ class NavigateInput(BaseModel):
 class ClickInput(BaseModel):
     """Arguments are descriptive; the authoritative target lives in the
     typed BrowserAction (target_ref + observation_id)."""
+    target_ref: str | None = Field(default=None, description="Target element ref")
 
 
 class FillFieldInput(BaseModel):
     """value_ref/literal_value choice is validated by BrowserAction itself
     (including the sensitive-literal policy)."""
+    target_ref: str | None = Field(default=None, description="Target element ref")
+    value: str | None = Field(default=None, description="Descriptive value")
+    literal_value: str | None = Field(default=None, description="Literal value")
+    value_ref: str | None = Field(default=None, description="Semantic reference")
 
 
 class SelectOptionInput(BaseModel):
+    target_ref: str | None = Field(default=None, description="Target element ref")
+    option: str | None = Field(default=None, description="Option text")
     option_note: str = Field(
         default="", description="Why this option was chosen (audit trail)",
     )
 
 
 class CheckControlInput(BaseModel):
-    pass
+    target_ref: str | None = Field(default=None, description="Target element ref")
 
 
 class UploadDocumentInput(BaseModel):
@@ -95,6 +102,7 @@ class UploadDocumentInput(BaseModel):
         min_length=1,
         description="Semantic document reference (e.g. 'DOCUMENT.aadhaar')",
     )
+    target_ref: str | None = Field(default=None, description="Target element ref")
 
 
 class ScrollInput(BaseModel):

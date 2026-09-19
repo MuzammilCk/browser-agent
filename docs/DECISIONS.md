@@ -454,6 +454,70 @@ Phase 10 (2026-09-19):
 
 Status: ACCEPTED — implemented in `app/agent/specialists/*`, covered by 27 targeted tests (24 unit specialist tests, 3 synthetic Chromium acceptance scenarios), 792 total tests passing with 0 failures.
 
+## D023 — Provenance-aware trust boundaries, orthogonal sensitivity, fail-closed schema gates, hardened approval bindings, and execution budgets
+
+Phase 11 (2026-09-19):
+
+1. Separation of Trust vs Sensitivity:
+   `TrustDomain` (`SYSTEM_UNCONDITIONAL`, `RUNTIME_DETERMINISTIC`, `USER_VERIFIED`,
+   `VAULT_RESOLVED`, `STATE_VERIFIED`, `SPECIALIST_INFERRED`, `PAGE_UNTRUSTED`,
+   `MODEL_INFERRED`) governs data provenance and epistemic authority.
+   `SensitivityLevel` (`PUBLIC`, `INTERNAL`, `CONFIDENTIAL`, `RESTRICTED`, `SECRET`)
+   governs confidentiality and exposure control orthogonally.
+   Secret handling is structural and field-based first (e.g., `input[type=password]`,
+   vault bindings); content-based regex scrubbing operates as defense-in-depth only.
+   Local vault credentials do not count as user approval.
+
+2. Runtime-Owned Immutable Provenance:
+   Provenance lineage (`RuntimeProvenance`) is minted and owned exclusively by the runtime.
+   Untrusted content (pages, model inferences, extracted text) cannot construct, modify,
+   or escalate `TrustDomain`, `verified=True`, `verifier`, or authorization states.
+   No fake cryptographic signatures are used; runtime memory immutability and deterministic
+   runtime minting serve as the authority boundary.
+
+3. Strict Epistemic Authority (`USER_VERIFIED` and `STATE_VERIFIED`):
+   - `USER_VERIFIED` strictly denotes explicit, interactive human HITL authorization.
+     Local vault credentials or automated heuristics never mint `USER_VERIFIED`.
+   - `STATE_VERIFIED` is minted solely by deterministic post-observation verification
+     rules against observed DOM/environment state. Page claims, DOM attributes
+     (`data-approved`, `data-risk`, `aria-*`), model claims, and specialist advice cannot
+     create `STATE_VERIFIED` facts or lower risk.
+
+4. Fail-Closed Strict Schemas:
+   Tool arguments, action models, and reasoner schemas enforce recursive `extra="forbid"`.
+   Any smuggled or unrecognized attributes (e.g., `is_trusted`, `bypass_policy`,
+   `skip_verification`) trigger immediate schema rejection (`TOOL_SCHEMA_INVALID`)
+   prior to policy evaluation or tool execution.
+
+5. Hardened Approval Bindings & Cryptographic Argument Fingerprinting:
+   `ApprovalBinding` is bound to exact invocation parameters via SHA-256 hash (`arguments_hash`),
+   `run_id`, `session_id`, `requested_action`, `tool_name`, `target_identity`, `semantic_id`,
+   `world_state_version`, and `origin_url`.
+   Any argument mutation, state drift, observation staleness, or origin deviation invalidates
+   the approval (`APPROVAL_BINDING_MISMATCH` / `APPROVAL_ORIGIN_MISMATCH`).
+   Spoofed `approved_by` values outside authenticated HITL context are rejected fail-closed
+   (`UNTRUSTED_APPROVAL_SPOOF`).
+
+6. Enveloped Untrusted Content & Origin Navigation Gating:
+   Untrusted webpage text, extracted metadata, OCR, and specialist advice are wrapped in
+   escaped boundary envelopes (`wrap_web_content`, `wrap_specialist_advice`, `wrap_document_data`)
+   with explicit instructions that enclosed content is untrusted data.
+   Navigation outside registered allowlisted origin domains is blocked fail-closed
+   (`PolicyDecision.DENY` / `UNAUTHORIZED_REDIRECT`).
+
+7. Persistent Monotonic Execution Budgets:
+   `RuntimeBudgetTracker` enforces monotonic wall-clock time (`time.monotonic()`), action count,
+   token count, specialist invocations, and error thresholds.
+   Budgets are reserved and checked prior to expensive operations. Counters persist losslessly
+   across checkpoints and resumes, preventing reset on restart.
+
+Status: ACCEPTED — implemented in `app/agent/security/*`, `app/policy/engine.py`,
+`app/agent/interrupts/models.py`, `app/agent/memory/policy.py`, `app/agent/reasoning/context.py`,
+`app/agent/runtime/state.py`, `app/agent/tools/registry.py`, covered by 28 targeted tests
+(25 unit security tests, 3 synthetic Chromium prompt-injection acceptance scenarios),
+820 total tests passing with 0 failures.
+
+
 
 
 
