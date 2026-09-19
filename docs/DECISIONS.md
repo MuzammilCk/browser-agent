@@ -310,3 +310,46 @@ Status: ACCEPTED — implemented in `app/agent/recovery/*`, covered by
 `tests/unit/test_agent_recovery.py` (15) and
 `tests/synthetic_forms/test_recovery_loop.py` (1, real Chromium).
 
+## D020 — Durable human interrupts, PostgreSQL persistence, and stale approval invalidation
+
+Phase 8 (2026-09-19):
+
+1. PostgreSQL Persistence over SQLite: Production checkpoints, human interrupts,
+   approval bindings, and concurrency locks are persisted to PostgreSQL using `asyncpg`.
+   PostgreSQL provides atomic upserts (`ON CONFLICT ... DO UPDATE ... RETURNING`),
+   transactional multi-row consistency, native timestamp intervals, and distributed worker
+   safety. Zero SQL is embedded within `AgentRuntime`, `AgentReasoner`, or `RecoveryReflector`.
+2. Abstract Store Interface: Runtime interacts strictly via the `CheckpointStore`
+   protocol (`app/agent/persistence/store.py`). `PostgresCheckpointStore` provides the
+   production/integration backing; `InMemoryCheckpointStore` powers isolated unit suites.
+3. Deterministic Interrupt Lifecycle: Human interrupts (`HumanInterrupt`) model
+   human-required pauses (`OTP_REQUIRED`, `CAPTCHA_REQUIRED`, `AUTHENTICATION_REQUIRED`,
+   `USER_CLARIFICATION_REQUIRED`, `USER_CONFIRMATION_REQUIRED`, `FINAL_REVIEW_REQUIRED`).
+   Lifecycle transitions are strictly table-driven (`PENDING`, `WAITING_FOR_USER`,
+   `APPROVED`, `EXPIRED`, `INVALIDATED`, `RESUMING`, `RESUMED`, `REJECTED`, `CANCELLED`).
+   Illegal transitions fail closed and raise `InvalidInterruptTransition`.
+4. Machine-Checked Approval Bindings (Never Permanent Booleans): Approvals are
+   epistemic objects (`ApprovalBinding`) bound to `run_id`, `interrupt_id`, `requested_action`,
+   `target_identity`, `semantic_id`, `world_state_version`, `observation_id`, and
+   `expires_at`. Approval is invalidated if `world_state_version` drifts, the target identity
+   changes, semantic reference is unresolvable, expiration passes, or requested action differs.
+5. Re-observation & Semantic Reconciliation on Resume: Resume never blind-continues
+   from historical checkpoint state. The `ResumeCoordinator` executes an 11-step protocol:
+   load checkpoint -> validate schema version -> check interrupt status -> acquire PostgreSQL
+   resume lock -> restore logical run state -> re-observe live browser state -> reduce into
+   `AgentWorldState` (invalidating old DOM refs) -> compare state & validate approval binding ->
+   transition interrupt to `RESUMED` -> resume from the logical subgoal.
+6. Atomic PostgreSQL Resume Locking with Fencing Tokens: Mutex locking over `resume_locks`
+   ensures only one active worker executes a run. Atomic upsert with lease duration and
+   incrementing `fencing_token` prevents race conditions, handles crashed worker lease
+   recovery, and rejects concurrent resume attempts deterministically. Failed resume
+   attempts immediately release the lock.
+7. Zero Secret Leakage: Passwords, OTPs, CAPTCHA answers, document bytes, and authentication
+   secrets are strictly prohibited from checkpoints and audit event payloads. Audit events
+   are recorded to `hitl_audit_events` with scrubbed metadata.
+
+Status: ACCEPTED — implemented in `app/agent/interrupts/*`, `app/agent/persistence/*`,
+`app/agent/runtime/resume.py`, covered by 26 targeted tests (10 unit interrupts,
+11 unit resume protocol, 4 integration postgres, 1 synthetic Chromium+Postgres crash-recovery).
+
+

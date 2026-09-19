@@ -10,7 +10,8 @@ Phase 4 — OpenRouter agent loop (COMPLETE)
 Phase 5 — Goal / Plan / Subgoal (COMPLETE)  
 Phase 6 — WorldState (COMPLETE)  
 Phase 7 — Reflection/Recovery (COMPLETE)  
-Overall: IN PROGRESS (Phases 0–7 complete; Phase 8 next)  
+Phase 8 — Durable Human Interrupts (COMPLETE)  
+Overall: IN PROGRESS (Phases 0–8 complete; Phase 9 next)  
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -509,24 +510,38 @@ Full regression suite: 712 passed, 0 failed (610 unit + 59 integration + 43 synt
 
 # Phase 8 — Durable human interrupts
 
-Goal: OTP/CAPTCHA/auth/clarification/confirmation become persistent resumable states.
+Goal: OTP/CAPTCHA/auth/clarification/confirmation become persistent resumable states backed by PostgreSQL.
 
 Tasks:
 
-- [ ] SQLite checkpoint store
-- [ ] durable approval state
-- [ ] resume endpoint
-- [ ] checkpoint versioning
-- [ ] re-observation on resume
-- [ ] target revalidation
-- [ ] stale approval rejection
-- [ ] expiration
-- [ ] session locks
-- [ ] restart/resume tests
+- [x] CheckpointStore abstraction protocol (app/agent/persistence/store.py)
+- [x] PostgresCheckpointStore using asyncpg (app/agent/persistence/postgres_store.py)
+- [x] PostgreSQL relational schema with migrations/DDL (app/agent/persistence/schema.sql)
+- [x] Durable HumanInterrupt lifecycle model & table-driven transitions (app/agent/interrupts/*)
+- [x] Machine-checked ApprovalBinding with version and semantic binding
+- [x] ResumeCoordinator with 11-step resume protocol (app/agent/runtime/resume.py)
+- [x] Checkpoint schema versioning (format_version 2)
+- [x] Live browser re-observation & WorldState reconciliation on resume
+- [x] Stale DOM reference invalidation and target re-resolution
+- [x] Deterministic stale approval rejection upon state drift
+- [x] Deterministic expiration for interrupts and approvals
+- [x] PostgreSQL atomic resume locking with fencing tokens and lease recovery
+- [x] Secret-redacted audit events table (hitl_audit_events)
+- [x] Restart/resume integration tests on live PostgreSQL (tests/integration/test_postgres_checkpoint_store.py)
+- [x] Full crash-recovery acceptance test on real Chromium + PostgreSQL (tests/synthetic_forms/test_durable_hitl_crash_recovery.py)
 
 Exit:
 
 Kill and restart the process during an OTP/CAPTCHA pause and safely resume the same run.
+Evidence: Proven by tests/synthetic_forms/test_durable_hitl_crash_recovery.py.
+Synthetic workflow paused at OTP_REQUIRED -> checkpoint & interrupt persisted to PostgreSQL ->
+Process 1 terminated -> Process 2 loads checkpoint -> browser re-observed -> WorldState reconciled ->
+verified facts preserved -> stale ref rejected -> stale approval rejected -> human completes OTP in browser ->
+fresh approval validated -> resume lock acquired -> interrupt transitioned to RESUMED ->
+agent resumes from same subgoal with fresh DOM ref -> acknowledgment receipt reached ->
+resume lock released -> full audit trail recorded in PostgreSQL.
+Phase 8 tests: 10 unit interrupts + 11 unit resume + 4 integration postgres + 1 synthetic crash-recovery.
+Full regression suite: 738 passed, 0 failed (631 unit + 63 integration + 44 synthetic).
 
 ---
 

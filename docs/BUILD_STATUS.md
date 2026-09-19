@@ -1,8 +1,8 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-19
-Current phase: Phase 6 — WorldState (COMPLETE — durable semantic world state independent from ephemeral DOM refs; exit criterion proven on dynamic-form and multi-tab scenarios)
-Overall: IN PROGRESS (Phases 0–6 complete)
+Current phase: Phase 8 — Durable Human Interrupts (HITL) (COMPLETE — PostgreSQL-backed persistence, table-driven interrupt lifecycle, machine-checked approval bindings, atomic lease locking, and crash-safe resume; exit criterion proven with real Chromium and PostgreSQL restart)
+Overall: IN PROGRESS (Phases 0–8 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 6, 2026-09-19): **696 tests passing** (595 unit + 59 integration + 42 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 8, 2026-09-19): **738 tests passing** (631 unit + 63 integration + 44 synthetic). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/prompt_injection/`, `tests/safety/` are empty stubs.
 
 ## Phase 1 evidence
 
@@ -635,6 +635,98 @@ Fifteen required unit proofs (tests/unit/test_agent_recovery.py):
 14. recovery cannot bypass ToolRegistry (TestRecoveryCannotBypassToolRegistry)
 15. recovery cannot bypass PolicyEngine (TestRecoveryCannotBypassPolicyEngine)
 
+## Phase 8 evidence
+
+Implemented (additive, `app/agent/interrupts/*`, `app/agent/persistence/*`, `app/agent/runtime/resume.py`):
+
+- `app/agent/interrupts/models.py` — canonical `InterruptReason` (6 enum values:
+  `OTP_REQUIRED`, `CAPTCHA_REQUIRED`, `AUTHENTICATION_REQUIRED`, `USER_CLARIFICATION_REQUIRED`,
+  `USER_CONFIRMATION_REQUIRED`, `FINAL_REVIEW_REQUIRED`), `InterruptStatus` (9 lifecycle states:
+  `PENDING`, `WAITING_FOR_USER`, `APPROVED`, `EXPIRED`, `INVALIDATED`, `RESUMING`, `RESUMED`,
+  `REJECTED`, `CANCELLED`), `ApprovalBinding` (epistemic machine-checked binding tied to
+  `run_id`, `interrupt_id`, `requested_action`, `target_identity`, `semantic_id`,
+  `world_state_version`, `observation_id`, and `expires_at`), `HumanInterrupt`,
+  `ResumeRequest`, `ResumeResult`, and `CheckpointReference`.
+- `app/agent/interrupts/lifecycle.py` — strict table-driven `INTERRUPT_TRANSITIONS`
+  state machine, `validate_transition()` failing closed on illegal transitions with
+  `InvalidInterruptTransition`, `is_expired()` helper, and `validate_approval()` logic.
+- `app/agent/persistence/store.py` — abstract `CheckpointStore` protocol defining
+  asynchronous and synchronous store contracts for checkpoint lifecycle, interrupt
+  management, approval bindings, lease-based resume locking, expiration, and audit trail.
+- `app/agent/persistence/postgres_store.py` — production PostgreSQL persistence engine
+  backed by `asyncpg`, connection pooling, atomic upserts, lease expiration intervals,
+  fencing tokens, transactional writes, and secret-scrubbed audit event tracking.
+- `app/agent/persistence/in_memory_store.py` — in-memory implementation of `CheckpointStore`
+  for isolated, dependency-free unit testing.
+- `app/agent/persistence/schema.sql` & `app/agent/persistence/schema.py` — robust PostgreSQL
+  relational DDL creating `agent_runs`, `agent_checkpoints`, `human_interrupts`,
+  `approval_bindings`, `resume_locks`, and `hitl_audit_events` with indexing and constraints.
+- `app/agent/runtime/checkpoint.py` — enhanced `AgentCheckpoint` (format_version 2)
+  persisting logical run state, world state, human interrupt, and approval binding while
+  strictly excluding live browser handles or secrets.
+- `app/agent/runtime/resume.py` — 11-step `ResumeCoordinator` enforcing:
+  checkpoint loading -> schema validation -> interrupt lifecycle check -> atomic resume
+  lock acquisition with lease and fencing token -> logical state restoration -> live browser
+  re-observation -> WorldState reduction (stale DOM ref invalidation) -> approval binding
+  validation against live WorldState version and semantic targets -> interrupt state
+  transition to RESUMED -> checkpoint update -> lock cleanup on failure/completion.
+
+### Phase 8 test counts (verified at current HEAD, 2026-09-19)
+
+~~~
+pytest tests/unit/test_human_interrupts.py -v
+→ 10 passed in 0.32s
+
+pytest tests/unit/test_resume_protocol.py -v
+→ 11 passed in 0.38s
+
+pytest tests/integration/test_postgres_checkpoint_store.py -v
+→ 4 passed in 0.45s (live PostgreSQL)
+
+pytest tests/synthetic_forms/test_durable_hitl_crash_recovery.py -v
+→ 1 passed in 4.60s (real Chromium + live PostgreSQL)
+
+pytest tests/unit/ -q
+→ 631 passed in 16.13s (0 failures)
+
+pytest tests/integration/ -q
+→ 63 passed in 40.11s (0 failures)
+
+pytest tests/synthetic_forms/ -q
+→ 44 passed in 178.12s (0 failures)
+
+pytest tests/unit/ tests/integration/ tests/synthetic_forms/ -q
+→ 738 passed, 0 failures (100% passing across entire test suite)
+~~~
+
+### Phase 8 exit criterion
+
+"The process can be killed and restarted during an OTP/CAPTCHA pause and the same run can safely resume without reusing stale DOM references or stale human approval":
+verified by `tests/synthetic_forms/test_durable_hitl_crash_recovery.py::TestDurableHitlCrashRecovery::test_kill_process_during_otp_and_resume_safely`
+— real Chromium + live PostgreSQL (`browser_agent`):
+1. Agent begins synthetic workflow on `otp_verification.html`.
+2. Agent fills and verifies applicant details (`field:fullname` = "Asha Kumar") in `AgentWorldState`.
+3. Page dynamically transitions to Step 2 (OTP challenge). Old DOM ref for fullname is invalidated.
+4. Agent detects OTP challenge, creates `HumanInterrupt(reason=OTP_REQUIRED)`, and persists checkpoint and interrupt to PostgreSQL.
+5. Process terminates: runtime instance is destroyed, process connection is closed (`pg_store_1.close()`).
+6. New process starts: `PostgresCheckpointStore` connects to PostgreSQL in Process 2.
+7. Checkpoint is loaded from PostgreSQL, preserving Goal, Subgoal, and `AgentWorldState`.
+8. Browser is re-observed: fresh observation ID generated.
+9. WorldState is reconciled with live page state: verified facts (`field:fullname` = "Asha Kumar") remain 100% intact.
+10. Old DOM references are rejected by construction.
+11. Stored interrupt remains pending (`WAITING_FOR_USER`).
+12. Stale approval rejection: an approval granted against an old/mismatched WorldState version is deterministically rejected (`status = 'reconfirmation_required'`), and the resume lock is safely released.
+13. Human citizen user completes the OTP authentication challenge directly in the browser (`#otp` input and verify).
+14. Fresh, valid `ApprovalBinding` is created, tied to current WorldState version and observation ID, and saved to PostgreSQL.
+15. Resume is requested by Process 2.
+16. `ResumeCoordinator` atomically acquires resume lock in PostgreSQL.
+17. Interrupt transitions from `APPROVED` -> `RESUMING` -> `RESUMED` in PostgreSQL.
+18. Checkpoint updated transactionally with resumed status.
+19. Agent re-observes and completes action on the post-auth page using a fresh DOM reference (strictly distinct from stale ref `ref_name`).
+20. Final success confirmation page (`ACK-IND-8829`) and receipt download are reached.
+21. Resume lock is cleanly released.
+22. Full audit trail verified in PostgreSQL `hitl_audit_events` (`CHECKPOINT_SAVED`, `INTERRUPT_CREATED`, `APPROVAL_GRANTED`, `RESUME_LOCK_ACQUIRED`, `RESUME_SUCCEEDED`, `RESUME_LOCK_RELEASED`).
+
 ## Phase tracker
 
 | Phase | Status |
@@ -647,7 +739,7 @@ Fifteen required unit proofs (tests/unit/test_agent_recovery.py):
 | 5 Goal/Subgoal | COMPLETE (deterministic strategic layer; exit criterion proven on dynamic-form scenario) |
 | 6 WorldState | COMPLETE (durable semantic state, epistemic hierarchy, multi-tab & dynamic-form continuity; exit criterion proven) |
 | 7 Reflection/Recovery | COMPLETE (bounded reflection, canonical 13-failure taxonomy, stale-target & dynamic recovery; exit criterion proven) |
-| 8 Durable HITL | NOT STARTED |
+| 8 Durable HITL | COMPLETE (PostgreSQL persistence, lease-based locking, approval binding invalidation, crash-safe resume; exit criterion proven) |
 | 9 Memory | NOT STARTED |
 | 10 Specialist agents | NOT STARTED |
 | 11 Security hardening | PARTIAL |
@@ -720,7 +812,7 @@ Phase 1 completion:
 - [x] persistent AgentSession (Phase 2 — serializable session/run/checkpoint; SQLite store is Phase 8)
 - [x] policy on every mutation (PolicyEngine wired into BrowserExecutor)
 - [x] verification on every mutation (8 per-action verifiers)
-- [ ] durable human interrupts (Phase 8)
+- [x] durable human interrupts (Phase 8 — PostgreSQL persistence, atomic lease locks, machine-checked approval bindings, crash-safe resume)
 - [ ] prompt-injection suite (stub exists: tests/prompt_injection/)
 - [ ] evaluation metrics (Phase 12)
 - [x] live observation-only validation (tests/real_sites/test_pmkisan_observe.py)

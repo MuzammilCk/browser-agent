@@ -79,6 +79,10 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///./data/app.db",
         description="Database connection URL",
     )
+    postgres_url: str = Field(
+        default="postgresql://postgres@localhost:5432/browser_agent",
+        description="PostgreSQL connection URL for Phase 8 durable checkpoints and interrupts",
+    )
     log_level: str = Field(default="INFO", description="Logging level")
     api_token: str = Field(
         default="",

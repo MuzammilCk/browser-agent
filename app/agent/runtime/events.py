@@ -38,6 +38,8 @@ class AgentEventType(str, Enum):
     RUN_COMPLETED = "run_completed"
     RUN_FAILED = "run_failed"
     RUN_ABORTED = "run_aborted"
+    USER_DECISION = "user_decision"
+    APPROVAL_GRANTED = "approval_granted"
     NOTE = "note"
 
 

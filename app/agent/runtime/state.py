@@ -20,6 +20,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.agent.interrupts.models import ApprovalBinding, HumanInterrupt
+from app.agent.world.models import AgentWorldState
 from app.models.workflow_state import WorkflowState
 
 
@@ -291,6 +293,15 @@ class AgentRunState(BaseModel):
     # Interrupts
     pending_interrupt: PendingInterrupt | None = Field(
         default=None, description="Active human interrupt, if paused"
+    )
+    human_interrupt: HumanInterrupt | None = Field(
+        default=None, description="Durable human interrupt (Phase 8)"
+    )
+    approval_binding: ApprovalBinding | None = Field(
+        default=None, description="Durable human approval binding (Phase 8)"
+    )
+    agent_world_state: AgentWorldState | None = Field(
+        default=None, description="Durable semantic world state (Phase 6/8)"
     )
 
     # Cost / usage

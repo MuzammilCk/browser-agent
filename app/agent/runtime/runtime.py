@@ -22,6 +22,12 @@ from __future__ import annotations
 import logging
 import uuid
 
+from app.agent.interrupts.models import (
+    ApprovalBinding,
+    HumanInterrupt,
+    InterruptReason,
+    InterruptStatus,
+)
 from app.agent.runtime.checkpoint import (
     AgentCheckpoint,
     CheckpointStore,
@@ -340,6 +346,96 @@ class AgentRuntime:
             message=f"Interrupt resolved: {resolution}",
         )
 
+    def raise_human_interrupt(
+        self,
+        run: AgentRunState,
+        *,
+        reason: InterruptReason,
+        description: str,
+        observation_id: str = "",
+        world_state_version: int | None = None,
+        subgoal_id: str | None = None,
+        required_action: str | None = None,
+        target_identity: str | None = None,
+        semantic_id: str | None = None,
+        expires_at: str | None = None,
+        metadata: dict | None = None,
+        checkpoint: bool = True,
+    ) -> HumanInterrupt:
+        """Record a durable Phase 8 HumanInterrupt and snapshot checkpoint."""
+        from datetime import datetime, timedelta, timezone
+        from app.agent.interrupts.models import utc_now_iso
+
+        now = datetime.now(timezone.utc)
+        if not expires_at:
+            # Default 15 minute lease for human pause
+            exp_dt = now + timedelta(minutes=15)
+            expires_at = exp_dt.isoformat()
+
+        ws_ver = world_state_version
+        if ws_ver is None:
+            ws_ver = getattr(run.agent_world_state, "version", 0) if run.agent_world_state else 0
+
+        interrupt = HumanInterrupt(
+            run_id=run.run_id,
+            reason=reason,
+            status=InterruptStatus.WAITING_FOR_USER,
+            description=description,
+            observation_id=observation_id,
+            world_state_version=ws_ver,
+            subgoal_id=subgoal_id or run.current_subgoal or None,
+            required_action=required_action,
+            target_identity=target_identity,
+            semantic_id=semantic_id,
+            created_at=now.isoformat(),
+            expires_at=expires_at,
+            metadata=dict(metadata or {}),
+        )
+
+        run.human_interrupt = interrupt
+        run.updated_at = utc_now_iso()
+        self.transition_toward(run, AgentLifecycle.WAITING_FOR_USER)
+
+        self._emit(
+            run,
+            AgentEventType.INTERRUPT_RAISED,
+            data={"reason": reason.value, "description": description, "interrupt_id": interrupt.interrupt_id},
+            message=f"Human Interrupt ({reason.value}): {description}",
+        )
+
+        if checkpoint:
+            cp = self.checkpoint_run(run, reason=f"human_interrupt:{reason.value}")
+            interrupt.checkpoint_id = cp.checkpoint_id
+
+        return interrupt
+
+    def approve_interrupt(
+        self,
+        run: AgentRunState,
+        approval: ApprovalBinding,
+    ) -> HumanInterrupt:
+        """Attach an approval binding to the pending human interrupt."""
+        if run.human_interrupt is None:
+            raise ValueError(f"run {run.run_id}: no human interrupt to approve")
+        if run.human_interrupt.interrupt_id != approval.interrupt_id:
+            raise ValueError(
+                f"approval interrupt_id {approval.interrupt_id} does not match active {run.human_interrupt.interrupt_id}"
+            )
+
+        run.human_interrupt.approval_binding = approval
+        run.human_interrupt.status = InterruptStatus.APPROVED
+        run.approval_binding = approval
+        run.updated_at = utc_now_iso()
+
+        self._emit(
+            run,
+            AgentEventType.USER_DECISION,
+            data={"approval_id": approval.approval_id, "action": approval.requested_action},
+            message=f"Human approval granted for {approval.requested_action} on {approval.target_identity}",
+        )
+        self.checkpoint_run(run, reason="approval_granted")
+        return run.human_interrupt
+
     # ------------------------------------------------------------------
     # Decisions (schema-validated records; the LLM loop arrives Phase 4)
     # ------------------------------------------------------------------
@@ -426,16 +522,25 @@ class AgentRuntime:
             data={"checkpoint_id": checkpoint_id, "reason": reason},
             message=f"Checkpoint ({reason})",
         )
+        ws_ver = getattr(run.agent_world_state, "version", 0) if run.agent_world_state else 0
         checkpoint = AgentCheckpoint(
             checkpoint_id=checkpoint_id,
             run_id=run.run_id,
             created_at=utc_now_iso(),
+            expires_at=run.human_interrupt.expires_at if run.human_interrupt else None,
             reason=reason,
+            state_version=ws_ver,
             state=run.model_copy(deep=True),
             events=list(self.get_event_log(run.run_id).events),
+            human_interrupt=run.human_interrupt.model_copy(deep=True) if run.human_interrupt else None,
+            approval_binding=run.approval_binding.model_copy(deep=True) if run.approval_binding else None,
         )
         self._checkpoint_store.save(checkpoint)
         return checkpoint
+
+    def get_checkpoint(self, checkpoint_id: str) -> AgentCheckpoint | None:
+        """Fetch a stored checkpoint by ID."""
+        return self._checkpoint_store.load(checkpoint_id)
 
     def restore_checkpoint(self, checkpoint_id: str) -> AgentRunState:
         """Restore a run from a stored checkpoint.
