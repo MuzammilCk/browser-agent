@@ -15,7 +15,8 @@ Phase 9 — Memory + Compaction (COMPLETE)Phase 10 — Restricted Specialist Age
 Phase 11 — Security Hardening (COMPLETE)   
 Phase 12 — Evaluation Platform (COMPLETE)   
 Phase 13 — Enterprise Runtime (COMPLETE)   
-Overall: IN PROGRESS (Phases 0–13 complete; Phase 14 next)     
+Phase 14 — Live Portal Validation (COMPLETE)   
+Overall: IN PROGRESS (Phases 0–14 complete; Phase 15 next)     
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -827,38 +828,80 @@ Deviations from the original Phase 13 sketch (documented, intentional):
 
 ---
 
-# Phase 14 — Live portal validation
+# Phase 14 — Live portal validation (COMPLETE, 2026-09-20)
 
-Progression:
+Progression implemented as a shadow-first live layer (`app/agent/live/*`, additive —
+no Phase 1–13 subsystem modified except additive registry entries):
 
 ~~~text
-OBSERVE ONLY
+OBSERVE ONLY (LIVE_SHADOW)
  ↓
 semantic extraction
  ↓
-field mapping
+field mapping (deterministic FieldMapper, no LLM)
  ↓
-planned action trace
+planned action trace (PolicyEngine risk probes)
  ↓
-human review
+human review request (recorded, signed-bound)
  ↓
-safe execution
+safe execution (LIVE_CONTROLLED_EXECUTION — separate, signed-review-gated)
  ↓
-human checkpoints
+human checkpoints (unchanged Phase 8/11 HITL)
  ↓
-final confirmation
+final confirmation (unchanged boundary; never autonomous)
 ~~~
 
-Suggested portal classes:
+Portal classes tested: welfare (PM-KISAN), certificate/scheme discovery (MyScheme),
+recruitment (NCS), grievance/gateway (india.gov.in — ANTI_BOT_BLOCK recorded).
+
+Tasks:
+
+- [x] Live shadow mode — `run_live_shadow`: observe → origin validation →
+      semantic extraction → deterministic field mapping → planned action trace →
+      human review request; ZERO mutations; reasoner never invoked (model output
+      cannot flip shadow into live mutation mode)
+- [x] Portal profiles (trusted metadata only) for pmkisan / myscheme / ncs /
+      indiaportal with official origin, trusted domains, safe test path,
+      last_verified_at; offline file:// test profiles are validator-marked
+- [x] Origin validation before every run + post-action (OriginMismatchError →
+      SAFETY_BLOCKED); live redirects validated against trusted_domains
+- [x] Planned action trace: tool, target semantic ID, current observation ID,
+      argument/reference summary, PolicyEngine risk classification, expected
+      state transition, verification criterion, HITL flag per action
+- [x] Human review boundary: HumanReviewRequest + HumanReviewDecision with
+      SHA-256 digest + HMAC signature; transplanted/forged approvals rejected
+- [x] Controlled execution — `run_controlled_execution`: separate mode,
+      signed-review-gated, action allowlist (fill/select/check/uncheck only),
+      per-step semantic re-binding (fresh ref + observation_id or STOP),
+      executed through the EXISTING ToolRegistry → PolicyEngine →
+      BrowserExecutor → verification loop; UNCERTAIN verification = failure
+- [x] Environment-vs-agent separation: generic anti-bot/CDN block detection
+      (title markers) → ANTI_BOT_BLOCK / PORTAL_UNAVAILABLE, never AGENT_FAILURE;
+      playwright timeout/network classification
+- [x] Phase 12 compatibility: TraceRecorder traces (JSON/JSONL) + evidence
+      reports with explicit LIVE metadata; never replayed as synthetic fixtures
+- [x] Live validation executed: pmkisan SHADOW_SUCCESS (104 elements, 29K aria
+      chars), myscheme SHADOW_SUCCESS (72 elements, 1 frame), ncs SHADOW_SUCCESS
+      (124 elements, 3 planned search actions, 1 LOW-confidence mapping surfaced
+      as ambiguous), indiaportal PORTAL_UNAVAILABLE/ANTI_BOT_BLOCK (honest)
+- [x] Evidence persisted: tests/live_portal/evidence/<portal>/report.json +
+      trace.jsonl (redacted, LIVE-metadata-tagged)
+- [x] NO live controlled execution performed — selected portals are
+      observation-class; real mutation candidates sit behind auth boundaries
+      (HITL + real user data). Controlled machinery proven on offline fixtures.
+      Decision: D027.
+
+Phase 14 tests: 34 unit (test_live_validation.py) + 15 offline pipeline
+(test_live_shadow_offline.py: 9, test_live_controlled_offline.py: 6... see
+BUILD_STATUS for exact split) + 6 evaluation acceptance/compat + 4 gated live
+(tests/real_sites/test_live_shadow.py). Full regression: 1057 passed, 0 failures.
+
+Suggested portal classes remaining for later validation:
 
 - training
-- welfare
-- identity/document
+- identity/document (auth-bound; requires dedicated test accounts)
 - transport
-- education
-- recruitment
-- grievance
-- certificate
+- education (udiseplus.gov.in observed reachable; not yet profiled)
 - appointments
 
 No autonomous payment or final submission.

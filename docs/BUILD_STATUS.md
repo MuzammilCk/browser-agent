@@ -1,8 +1,8 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-20
-Current phase: Phase 13 — Enterprise Runtime (COMPLETE — API Gateway with authenticated/authorized workflow APIs and durable idempotency, Workflow Service owning durable lifecycle, lease/fenced Execution Workers as sole browser-handle owners, PostgreSQL-backed queue with SKIP LOCKED atomic claims, crash/restart recovery, vault boundary with strict secret isolation, append-only redacted audit, tenant isolation, durable cancellation, bounded retries; 148 targeted enterprise tests including live PostgreSQL store tests and real-Chromium acceptance scenarios; 998 total tests passing with 0 failures)
-Overall: IN PROGRESS (Phases 0–13 complete)
+Current phase: Phase 14 — Live Portal Validation (COMPLETE — shadow-first live layer in `app/agent/live/*`: observation-only live shadow with deterministic field mapping and planned action traces, signed human-review boundary, gated controlled execution through the existing ToolRegistry→PolicyEngine→BrowserExecutor path, generic anti-bot/environment classification, Phase 12-compatible live evidence; live shadow validated on PM-KISAN, MyScheme, NCS; india.gov.in honestly classified ANTI_BOT_BLOCK; no live mutation performed — see docs/DECISIONS.md D027; 1057 total tests passing with 0 failures)
+Overall: IN PROGRESS (Phases 0–14 complete)
 Release status: NOT PRODUCTION READY
 
 ## Phase 0 evidence
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 13, 2026-09-20): **998 tests passing** (679 unit + 65 integration + 48 synthetic + 28 prompt_injection + 30 evaluation + 148 enterprise). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/real_sites/` contains a manual observation script with no pytest-collectable tests, and `tests/portal_regression/`, `tests/safety/` are empty stubs.
+Current reproducible test baseline (verified with Phase 14, 2026-09-20): **1057 tests passing** (713 unit + 65 integration + 57 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise) + 4 gated live tests (tests/real_sites/test_live_shadow.py, RUN_REAL_SITE_TESTS=true). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/portal_regression/`, `tests/safety/` remain empty stubs; `tests/real_sites/` now contains 4 pytest-collectable observation-only live tests plus the Phase 1 manual observation script.
 
 ## Phase 1 evidence
 
@@ -1047,6 +1047,135 @@ FULL REGRESSION: 998 passed, 0 failures
 Full regression suite: 998 passed, 0 failures (679 unit + 65 integration + 48 synthetic +
 28 prompt_injection + 30 evaluation + 148 enterprise).
 
+## Phase 14 evidence
+
+Implemented (additive, `app/agent/live/*` — no Phase 1-13 file modified except two
+additive entries in `app/sites/registry.py`; the shadow/controlled layer WRAPS the
+existing execution architecture rather than adding an alternative path):
+
+- `app/agent/live/models.py` — PortalProfile (frozen trusted metadata; https
+  gov.in/nic.in origin validator; file:// support ONLY via the explicitly-marked
+  offline_test_profile constructor), LiveRunMode, LiveOutcomeStatus (13 explicit,
+  non-collapsing statuses), EnvironmentCondition, SemanticExtractionEvidence,
+  FieldMappingEvidence, PlannedAction, FinalBoundaryEvidence, HumanReviewRequest /
+  HumanReviewDecision (SHA-256 digest + HMAC signature binding),
+  validate_controlled_action (deterministic allowlist + sensitive-target +
+  final-boundary gate), classify_injection_exposure, classify_environment_error.
+- `app/agent/live/profiles.py` — portal profiles for pmkisan / myscheme / ncs /
+  indiaportal (trusted metadata only, no executable scripts), plus the offline
+  profile factory + registry used by fixture tests.
+- `app/agent/live/shadow.py` — `run_live_shadow`: open entrypoint → origin
+  validation → generic anti-bot/CDN block detection → observe → semantic
+  extraction evidence → deterministic FieldMapper mapping (no LLM gateway) →
+  planned action trace (per-action PolicyEngine risk probe on the ACTUAL mapped
+  reference; ambiguity surfaced as AMBIGUOUS — never guessed; submit/pay/declare
+  controls detected and human-gated) → HumanReviewRequest record. ZERO mutations;
+  reasoner never invoked. Emits TraceRecorder events (RUN_START/OBSERVATION/
+  WORLD_STATE_UPDATE/TOOL_PROPOSAL/HITL_INTERRUPT/SECURITY_VIOLATION/RUN_END).
+- `app/agent/live/execution.py` — `run_controlled_execution`: separately-constructed
+  LIVE_CONTROLLED_EXECUTION mode. Gates: (1) signed human review decision verified
+  against the request digest; (2) deterministic per-step allowlist
+  (fill_field/select_option/check_control/uncheck_control ONLY — click/upload
+  never; password/otp/captcha/pin semantic targets never; submit/payment text
+  never); (3) origin validation before + after every action; (4) per-step semantic
+  re-binding of the durable semantic ID to the CURRENT ref + observation_id, or
+  STALE_TARGET_STOPPED — never a guess; (5) execution through the EXISTING
+  ToolRegistry → PolicyEngine → BrowserExecutor loop with the tool layer's
+  stale-ref guard intact; (6) deterministic verification required (UNCERTAIN =
+  failure); (7) POLICY_DENIED stops the run (POLICY_BLOCKED), never retried.
+- `scripts/phase14_live_shadow.py` — operator runner persisting per-portal
+  evidence (report.json + trace.jsonl) under tests/live_portal/evidence/.
+- `app/sites/registry.py` — added services.india.gov.in (National Government
+  Services Portal) as a trusted domain (it was absent; its live redirect to the
+  blocked www.india.gov.in/services was validated against trusted_domains).
+
+### Phase 14 live validation results (2026-09-20, evidence in tests/live_portal/evidence/)
+
+| Portal | Class | Result | Evidence |
+|---|---|---|---|
+| PM-KISAN (pmkisan.gov.in) | welfare | SHADOW_VALIDATION_SUCCESS — 104 elements observed, 29,366-char ARIA snapshot, language combobox planned, origin validated | evidence/pmkisan/report.json |
+| MyScheme (myscheme.gov.in) | certificate | SHADOW_VALIDATION_SUCCESS — 72 elements, 1 frame detected, 3 planned actions on search controls | evidence/myscheme/report.json |
+| NCS (ncs.gov.in) | recruitment | SHADOW_VALIDATION_SUCCESS — 124 elements, job-search fields planned (skills/city), city mapped USER.village at LOW confidence surfaced as ambiguous (no guess) | evidence/ncs/report.json |
+| india.gov.in gateway | grievance | PORTAL_UNAVAILABLE — EnvironmentCondition.ANTI_BOT_BLOCK (Akamai "Access Denied"); honestly classified, not an agent failure, not retried | evidence/indiaportal/report.json |
+
+No live controlled execution was performed: the selected portals are
+observation/search-class; genuine mutation candidates (eKYC, login, job
+applications) sit behind authentication boundaries requiring real user data.
+Decision D027. The controlled-execution machinery is fully proven on offline
+fixtures (real Chromium) and ready for live use under its gates.
+
+### Phase 14 test counts (verified at current HEAD, 2026-09-20)
+
+~~~
+pytest tests/unit/test_live_validation.py -q
+→ 34 passed in 0.49s
+
+pytest tests/synthetic_forms/test_live_shadow_offline.py \
+  tests/synthetic_forms/test_live_controlled_offline.py -q
+→ 15 passed in ~18s (real Chromium, local fixtures, no network)
+
+pytest tests/evaluation/test_live_portal_acceptance.py -q
+→ 6 passed (Phase 12 artifact compatibility + controlled acceptance, real Chromium)
+
+RUN_REAL_SITE_TESTS=true pytest tests/real_sites -q
+→ 4 passed in 32.00s (observation-only, live portals)
+
+pytest tests/unit tests/prompt_injection tests/evaluation tests/integration -q
+→ 842 passed
+
+pytest tests/synthetic_forms tests/enterprise -q
+→ 211 passed
+
+FULL REGRESSION: 1057 passed, 0 failures
+(713 unit + 65 integration + 57 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise)
++ 4 gated live tests (not counted in the standard suite; require RUN_REAL_SITE_TESTS=true)
+~~~
+
+### Phase 14 exit criteria (all proven)
+
+1-3. Portal set selected, profiles recorded, official origins validated
+     (origin check runs before every run and after every action; live redirect
+     validated) — D026/D027 + tests/real_sites/test_live_shadow.py.
+4. Observation-only validation works — 3 portals SHADOW_SUCCESS; zero
+   mutations (asserted in every shadow test).
+5. Semantic extraction works on live portals — element/role/aria evidence
+   captured per portal.
+6. Field mapping has measurable evidence — deterministic mapper results with
+   explicit unmapped/ambiguous lists (NCS: LOW-confidence city mapping surfaced,
+   not guessed).
+7. Ambiguity surfaced — AMBIGUOUS policy decisions in the planned trace.
+8. Planned action traces produced — tool, semantic ID, observation ID, args,
+   PolicyEngine risk, expected transition, verification criterion, HITL flag.
+9. Human review boundary enforced — signed request/decision records;
+   transplant + forgery rejected (unit + acceptance tests).
+10. Controlled execution works where safely applicable — proven end-to-end on
+    fixtures; no live mutation candidate existed (D027 — honest scope note).
+11. All mutations through ToolRegistry → PolicyEngine → BrowserExecutor →
+    verification — asserted via policy_allowed + verification_status evidence.
+12. Dynamic DOM handling — semantic re-binding with stale-target stop.
+13. Multi-tab/frame — frame evidence captured (MyScheme: 1 frame detected);
+    tab continuity already proven in Phase 6.
+14. Authentication HITL-controlled — auth boundaries detected and reported;
+    never bypassed.
+15. Prompt injection contained — classify_injection_exposure scans live
+    content; patterns recorded as security events; policy unchanged.
+16. Unauthorized redirects blocked — origin mismatch → SAFETY_BLOCKED
+    (proven offline; live redirect validated on services.india.gov.in).
+17. Final submission human-gated — submit/pay controls detected + gated in
+    every shadow run; no_final_submission_executed always true.
+18. Documents/scoped secrets — no document upload executed live; evidence
+    redacted (test_live_validation.py redaction tests).
+19. Budgets — controlled runs bounded by max_steps; existing Phase 11 budgets
+    unchanged.
+20. Live traces captured and redacted — report.json + trace.jsonl per portal.
+21. Phase 12 artifacts produced — TraceRecorder JSON/JSONL + evidence reports
+    with LIVE metadata (test_live_portal_acceptance.py).
+22. Unsupported/unsafe workflows explicitly classified — ANTI_BOT_BLOCK,
+    UNSUPPORTED, AMBIGUOUS statuses exercised.
+23-24. No portal-specific adapters added; registry holds metadata only.
+25. Environment failures distinguished — dedicated classifier + tests.
+26-28. Targeted/acceptance/full regression pass — counts above.
+
 ## Phase tracker
 
 | Phase | Status |
@@ -1065,7 +1194,7 @@ Full regression suite: 998 passed, 0 failures (679 unit + 65 integration + 48 sy
 | 11 Security hardening | COMPLETE (provenance-aware trust boundaries, orthogonal sensitivity, non-authoritative DOM attributes, fail-closed parameter gates, hardened approval bindings, runtime execution budgets; exit criterion proven in real Chromium) |
 | 12 Evaluation | COMPLETE (causal trace recording, multidimensional metrics, replay divergence engine, regression gates, failure injection, 14 golden scenarios, real Chromium acceptance; exit criterion proven) |
 | 13 Enterprise runtime | COMPLETE (API gateway, workflow service, lease/fenced workers, PostgreSQL queue, vault boundary, durable audit, idempotency, cancellation, tenant isolation; real-Chromium acceptance + crash recovery + multi-tenant + vault isolation proven; live PostgreSQL store tests) |
-| 14 Live portal validation | NOT STARTED |
+| 14 Live portal validation | COMPLETE (shadow-first live layer; live shadow validated on PM-KISAN/MyScheme/NCS; india.gov.in ANTI_BOT_BLOCK classified; signed human-review boundary + gated controlled execution proven on fixtures; no live mutation performed — D027) |
 | 15 Production readiness | NOT STARTED |
 
 ## Production gates

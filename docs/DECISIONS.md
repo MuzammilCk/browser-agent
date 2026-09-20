@@ -633,6 +633,77 @@ Status: ACCEPTED — implemented in `app/enterprise/*`, covered by 148 targeted 
 idempotency, tenant isolation, audit persistence, vault, security, cancellation, live PostgreSQL
 store, and two real-Chromium acceptance scenarios), 998 total tests passing with 0 failures.
 
+## D026 — Live validation is a separate shadow-first layer, not a new execution path
+
+Phase 14 (2026-09-20):
+
+1. Shadow mode is MODEL-INDEPENDENT by construction: `run_live_shadow`
+   never invokes the reasoner, so no model output can flip shadow mode into
+   live mutation mode. The planned action trace is derived deterministically
+   from observation + the existing deterministic FieldMapper (no LLM
+   gateway) + PolicyEngine risk probes.
+2. Controlled execution is a SEPARATELY CONSTRUCTED mode requiring a signed
+   human review decision (SHA-256 request digest + HMAC signature, constant-time
+   compare). A transplanted approval (valid signature, different plan) is
+   rejected by digest mismatch; a forged signature is rejected by HMAC check.
+3. Controlled execution adds NO new execution path: mutations go through the
+   existing ToolRegistry → PolicyEngine → BrowserExecutor → verification loop
+   with the tool layer's stale-ref guard intact. The only additions are two
+   deterministic gates in FRONT of the registry: an action allowlist
+   (fill/select/check/uncheck only — click/upload never allowed) and per-step
+   semantic re-binding (durable semantic ID → fresh ref + fresh
+   observation_id, or STOP — never guess).
+4. UNCERTAIN verification is failure: a controlled step counts as executed
+   only when the executor's deterministic verifier reports `success`.
+5. Live evidence separates observed behavior, agent inference (mapper
+   bindings are advisory, never verification), deterministic verification,
+   human-confirmed results, and environment conditions. Explicit outcome
+   statuses never collapse (PORTAL_UNAVAILABLE ≠ AGENT_FAILURE;
+   POLICY_BLOCKED ≠ automation failure).
+6. Portal profiles are trusted METADATA ONLY (origin, trusted domains, safe
+   test path, last_verified_at). The registry must not become executable
+   website scripts. Offline test profiles (file://) are validator-marked and
+   cannot be confused with live profiles (live constructor enforces https
+   gov.in/nic.in origins).
+
+Status: ACCEPTED — implemented in `app/agent/live/*`, covered by 34 unit tests
+(tests/unit/test_live_validation.py), 15 offline pipeline tests (real Chromium:
+tests/synthetic_forms/test_live_shadow_offline.py, test_live_controlled_offline.py),
+6 evaluation-compatibility/acceptance tests (tests/evaluation/test_live_portal_acceptance.py),
+and 4 gated live tests (tests/real_sites/test_live_shadow.py, RUN_REAL_SITE_TESTS=true).
+
+## D027 — Phase 14 portal selection, honest environment classification, and no unsafe live mutation
+
+Phase 14 (2026-09-20):
+
+1. Selected portals (small representative set, all with safe observation-only
+   paths): PM-KISAN (welfare, pmkisan.gov.in), MyScheme (certificate/scheme
+   discovery, myscheme.gov.in), National Career Service (recruitment,
+   ncs.gov.in). The india.gov.in gateway was attempted and is CDN/anti-bot
+   blocked (Akamai "Access Denied") from this environment.
+2. Anti-bot block pages are detected GENERICALLY (title markers: "access
+   denied", "just a moment", etc.) and classified as
+   `EnvironmentCondition.ANTI_BOT_BLOCK` → `PORTAL_UNAVAILABLE`. A blocked
+   page is never credited as a portal observation and never counted as an
+   agent failure. The blocked portal is recorded honestly and not retried.
+3. services.india.gov.in was added to the site registry (it was absent); it
+   redirects to the blocked www.india.gov.in/services — evidence that
+   redirect validation against trusted_domains works on live redirects.
+4. NO live controlled execution was performed in Phase 14: the selected
+   portals are observation/search-class pages whose only interactive
+   controls (language selectors, search boxes) offer no meaningful safe
+   mutation candidate, and the actual mutation candidate surfaces (eKYC,
+   login, job applications) all sit behind authentication boundaries that
+   require real user data. The controlled-execution machinery is fully
+   proven on offline fixtures (real Chromium) and is READY for live use;
+   deferring live mutation is the safety-correct choice, not a gap.
+5. Live-run artifacts (report.json + trace.jsonl per portal) are persisted
+   under tests/live_portal/evidence/ with explicit LIVE metadata and are
+   never fed into deterministic replay as synthetic fixtures.
+
+Status: ACCEPTED — evidence in tests/live_portal/evidence/ (pmkisan,
+myscheme, ncs, indiaportal) and tests/real_sites/test_live_shadow.py.
+
 
 
 

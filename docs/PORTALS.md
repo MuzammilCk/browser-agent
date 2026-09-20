@@ -1,6 +1,6 @@
 # 🌐 Portals — Validation Matrix & Test Status
 
-**Last updated:** 2026-09-18
+**Last updated:** 2026-09-20 (Phase 14 live shadow validation)
 
 > **Rule:** A portal is only marked "supported" after a reproducible regression test passes.
 > Portals without verified tests are marked `UNVERIFIED`.
@@ -32,7 +32,10 @@ The trusted government domain registry is implemented in `app/sites/registry.py`
 
 | # | Portal | Domain | Classes | Status | Test File | Notes |
 |---|--------|--------|---------|--------|-----------|-------|
-| 1 | PM-KISAN | pmkisan.gov.in | A | OBSERVED | `tests/real_sites/test_pmkisan_observe.py` | Observation-only test — verifies ARIA + DOM extraction on real government portal (no data submission) |
+| 1 | PM-KISAN | pmkisan.gov.in | A | OBSERVED | `tests/real_sites/test_pmkisan_observe.py`, `tests/real_sites/test_live_shadow.py` | Phase 1 observation + Phase 14 shadow validation (104 elements, planned trace, evidence persisted) — no data submission |
+| 1b | MyScheme | myscheme.gov.in | A | OBSERVED | `tests/real_sites/test_live_shadow.py` | Phase 14 shadow validation — 72 elements, 1 frame, 3 planned search actions; evidence in `tests/live_portal/evidence/myscheme/` |
+| 1c | NCS | ncs.gov.in | A | OBSERVED | `tests/real_sites/test_live_shadow.py` | Phase 14 shadow validation — job-search fields planned; city mapping LOW-confidence surfaced as ambiguous (no guess) |
+| 1d | India Gateway | india.gov.in / services.india.gov.in | A | BLOCKED_BY_SAFETY / ENVIRONMENT | `tests/real_sites/test_live_shadow.py` | Akamai anti-bot block ("Access Denied") from automation; classified ANTI_BOT_BLOCK/PORTAL_UNAVAILABLE — never an agent failure; not retried |
 
 ### Registered Portals (UNVERIFIED)
 
@@ -149,14 +152,41 @@ class DomainEntry(BaseModel):
 
 ### PM-KISAN (pmkisan.gov.in)
 
-- Date tested: 2026-09-18
-- Class: A
-- Result: OBSERVED
-- Test file: `tests/real_sites/test_pmkisan_observe.py`
-- Fields mapped: N/A (observation-only — verifies ARIA + DOM extraction)
-- Actions executed: 0 (no interaction — observation only)
-- Safety blocks: None (observation mode, R0)
-- Notes: Test verifies that `PageObserver` can successfully observe a real government portal, extract ARIA snapshots, and produce structured page state without any data submission. Test is skipped on CI (requires `RUN_REAL_SITE_TESTS=true`).
+- Date tested: 2026-09-18 (Phase 1 observation); 2026-09-20 (Phase 14 shadow)
+- Class: A (welfare)
+- Result: OBSERVED (Phase 14: SHADOW_VALIDATION_SUCCESS)
+- Test files: `tests/real_sites/test_pmkisan_observe.py`, `tests/real_sites/test_live_shadow.py`
+- Phase 14 evidence: 104 elements observed, 29,366-char ARIA snapshot, language combobox planned with policy risk classification, human review request recorded; evidence in `tests/live_portal/evidence/pmkisan/`
+- Actions executed: 0 (observation only)
+- Safety blocks: None (observation mode)
+- Notes: Skipped on CI (requires `RUN_REAL_SITE_TESTS=true`).
+
+### MyScheme (myscheme.gov.in) — Phase 14
+
+- Date tested: 2026-09-20
+- Class: A (certificate/scheme discovery)
+- Result: SHADOW_VALIDATION_SUCCESS
+- Test file: `tests/real_sites/test_live_shadow.py`
+- Evidence: 72 elements, 1 frame detected, 3 planned actions on search controls; `tests/live_portal/evidence/myscheme/`
+- Actions executed: 0
+
+### NCS (ncs.gov.in) — Phase 14
+
+- Date tested: 2026-09-20
+- Class: A (recruitment)
+- Result: SHADOW_VALIDATION_SUCCESS
+- Test file: `tests/real_sites/test_live_shadow.py`
+- Evidence: 124 elements; job-search fields planned (skills/city); "Enter City" mapped to USER.village at LOW confidence and surfaced as AMBIGUOUS (never guessed); `tests/live_portal/evidence/ncs/`
+- Actions executed: 0
+
+### india.gov.in / services.india.gov.in — Phase 14
+
+- Date tested: 2026-09-20
+- Class: A (grievance/gateway)
+- Result: BLOCKED_BY_SAFETY / ENVIRONMENT (ANTI_BOT_BLOCK)
+- Test file: `tests/real_sites/test_live_shadow.py::TestLiveShadowIndiaPortal`
+- Evidence: Akamai "Access Denied" page served to the automated browser; detected generically by title and classified `EnvironmentCondition.ANTI_BOT_BLOCK` → `PORTAL_UNAVAILABLE`. NOT an agent failure; observation stage not credited; not retried (rate-limit invariant). `tests/live_portal/evidence/indiaportal/`
+- Notes: services.india.gov.in was added to the site registry during Phase 14; its live redirect to the blocked www.india.gov.in/services validated the redirect trusted-domain check.
 
 ---
 

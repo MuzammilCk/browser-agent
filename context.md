@@ -315,3 +315,24 @@ are rejected by the store (fencing), not by worker honesty; queue payloads
 carry references only; raw secrets never cross any boundary; audit is
 append-only, causal, and redacted; Phase 8 checkpoints remain authoritative
 for resume. Decision record: docs/DECISIONS.md D025.
+
+## Live portal validation (Phase 14)
+
+Live validation is a shadow-first layer over the unchanged execution
+architecture (`app/agent/live/*`):
+
+~~~text
+LIVE_SHADOW: observe → origin check → semantic extraction → deterministic
+field mapping → planned action trace → human review request (recorded only)
+
+LIVE_CONTROLLED_EXECUTION: signed human review → deterministic allowlist →
+semantic re-binding → ToolRegistry → PolicyEngine → BrowserExecutor →
+verification → WorldState (per action)
+~~~
+
+Invariants: shadow mode never executes and never invokes the reasoner (model
+output cannot flip the mode); controlled execution requires a signed review
+decision bound to the exact plan; submit/payment/auth targets are
+deterministically excluded; environment conditions (anti-bot blocks,
+timeouts) are recorded as such and never collapsed into agent failures.
+Decision records: docs/DECISIONS.md D026, D027.

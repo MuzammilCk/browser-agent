@@ -27,11 +27,48 @@ Captures safe observations without real PII across portal archetypes:
 - Appointments and scheduling
 Replays `PageState` / DOM / ARIA / screenshot fixtures offline via `ReplayEngine`.
 
-### Layer C — Live Shadow Mode
+### Layer C — Live Shadow Mode (Implemented — Phase 14)
 Agent observes, maps, and proposes tool calls against live portals without mutating remote state.
 
-### Layer D — Controlled Live Execution
+Implemented in `app/agent/live/shadow.py` (`run_live_shadow`):
+- Model-independent: the reasoner is never invoked; the planned action trace is
+  derived deterministically (observation → deterministic FieldMapper →
+  PolicyEngine risk probes). Model output alone can never switch shadow mode
+  into live mutation mode.
+- Origin validation before observation; generic anti-bot/CDN block detection
+  classifies blocked portals as `ANTI_BOT_BLOCK`/`PORTAL_UNAVAILABLE` (an
+  environment condition — never an agent failure, never a successful
+  observation).
+- Evidence: `LivePortalRunReport` per run + `TraceRecorder` JSON/JSONL with
+  explicit LIVE metadata (`live_metadata.started_at/finished_at`, mode,
+  agent commit). Live traces are NEVER fed into deterministic replay as
+  synthetic fixtures.
+- Statuses are explicit and non-collapsing: PORTAL_OBSERVATION_SUCCESS /
+  SEMANTICS_SUCCESS / MAPPING_SUCCESS / SHADOW_VALIDATION_SUCCESS /
+  HITL_REQUIRED / AMBIGUOUS / UNSUPPORTED / POLICY_BLOCKED / PORTAL_UNAVAILABLE
+  / ENVIRONMENT_FAILURE / AGENT_FAILURE / SAFETY_BLOCKED.
+
+Phase 14 live evidence (2026-09-20): PM-KISAN, MyScheme, NCS shadow-validated
+successfully; india.gov.in recorded ANTI_BOT_BLOCK. Artifacts:
+tests/live_portal/evidence/<portal>/report.json + trace.jsonl.
+
+### Layer D — Controlled Live Execution (Implemented — Phase 14; live use deferred, D027)
 Permits bounded low/medium-risk mutations with human authorization. Strictly zero bypass of payment, final legal submission, CAPTCHA, or OTP.
+
+Implemented in `app/agent/live/execution.py` (`run_controlled_execution`):
+- Requires a successful shadow run's review request PLUS a signed human review
+  decision (SHA-256 digest + HMAC; transplanted or forged approvals rejected).
+- Deterministic action allowlist: fill/select/check/uncheck only; click/upload
+  never; password/otp/captcha/pin semantic targets never; submit/payment text
+  never (final boundary is human-gated).
+- Every mutation flows through the EXISTING ToolRegistry → PolicyEngine →
+  BrowserExecutor → verification path; per-step semantic re-binding (fresh ref
+  + observation_id) or STALE_TARGET_STOPPED; UNCERTAIN verification counts as
+  failure; POLICY_DENIED stops the run.
+- No live controlled execution has been performed yet (Phase 14 portals were
+  observation-class; D027). The machinery is proven on offline fixtures with
+  real Chromium (tests/evaluation/test_live_portal_acceptance.py,
+  tests/synthetic_forms/test_live_controlled_offline.py).
 
 ---
 

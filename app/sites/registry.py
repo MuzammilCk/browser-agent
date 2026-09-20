@@ -1048,6 +1048,15 @@ _CENTRAL_PORTALS: list[dict[str, Any]] = [
 
     # --- Digital Services ---
     {
+        "domain": "services.india.gov.in",
+        "official_name": "National Government Services Portal",
+        "category": "Portals",
+        "subcategory": "Services Directory",
+        "url": "https://services.india.gov.in",
+        "description": "Single-window access to central and state government services — search, service categories, and how-to guides",
+        "interaction_classes": ["A"],
+    },
+    {
         "domain": "india.gov.in",
         "official_name": "National Portal of India",
         "category": "Digital Services",
