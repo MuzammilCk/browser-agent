@@ -159,7 +159,7 @@ class DomainEntry(BaseModel):
 - Phase 14 evidence: 104 elements observed, 29,366-char ARIA snapshot, language combobox planned with policy risk classification, human review request recorded; evidence in `tests/live_portal/evidence/pmkisan/`
 - Actions executed: 0 (observation only)
 - Safety blocks: None (observation mode)
-- Notes: Skipped on CI (requires `RUN_REAL_SITE_TESTS=true`).
+- Notes: Skipped by default (operator gate `RUN_REAL_SITE_TESTS=true`); no CI is configured for this repository.
 
 ### MyScheme (myscheme.gov.in) — Phase 14
 
@@ -215,4 +215,4 @@ Real site tests (in `tests/real_sites/`) are **observation-only** by design. The
 3. Save screenshots and observation results
 4. **Never** fill forms, click submit, or interact with data
 
-These tests are **skipped by default** and require `RUN_REAL_SITE_TESTS=true` to run, ensuring they don't accidentally cause issues in CI or during development.
+These tests are **skipped by default** and require `RUN_REAL_SITE_TESTS=true` to run, keeping live observation opt-in during development. (No CI system is configured for this repository; the gate exists for operator safety, not CI.)

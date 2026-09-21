@@ -1,7 +1,7 @@
 # BUILD STATUS
 
 Last reconciled: 2026-09-21
-Current phase: Phase 14 — Live Portal Validation (COMPLETE, expanded — shadow-first live layer in `app/agent/live/*`: observation-only live shadow with deterministic field mapping and planned action traces, signed bounded human-review boundary, gated controlled execution through the existing ToolRegistry→PolicyEngine→BrowserExecutor path, generic anti-bot/environment classification, Phase 12-compatible live evidence; live shadow validated on ALL NINE intended portal classes — PM-KISAN, MyScheme, NCS, apprenticeshipindia (training), UDISE+ (education), Parivahan (transport), DigiLocker (identity_document), Passport Seva (appointments); india.gov.in honestly classified ANTI_BOT_BLOCK; non-collapsing failure classification end-to-end; no live mutation performed — see docs/DECISIONS.md D027/D028; 1092 total tests passing with 0 failures)
+Current phase: Phase 14 — Live Portal Validation (COMPLETE, expanded — shadow-first live layer in `app/agent/live/*`: observation-only live shadow with deterministic field mapping and planned action traces, signed bounded human-review boundary, gated controlled execution through the existing ToolRegistry→PolicyEngine→BrowserExecutor path, generic anti-bot/environment classification, Phase 12-compatible live evidence; live shadow validated on ALL NINE intended portal classes — PM-KISAN, MyScheme, NCS, apprenticeshipindia (training), UDISE+ (education), Parivahan (transport), DigiLocker (identity_document), Passport Seva (appointments); india.gov.in honestly classified ANTI_BOT_BLOCK; non-collapsing failure classification end-to-end; no live mutation performed — see docs/DECISIONS.md D027/D028; 1093 total tests passing + 12 gated skips, 0 failures — audited against actual pytest output 2026-09-21)
 Overall: IN PROGRESS (Phases 0–14 complete)
 Release status: NOT PRODUCTION READY
 
@@ -34,7 +34,32 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 14 expansion, 2026-09-21): **1092 tests passing** (733 unit + 65 integration + 80 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise) + 10 gated live tests (tests/real_sites/test_live_shadow.py, RUN_REAL_SITE_TESTS=true) + 2 gated real-LLM tests (tests/real_sites/test_openrouter_live.py, RUN_OPENROUTER_LIVE_TEST=true). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/portal_regression/`, `tests/safety/` remain empty stubs; `tests/real_sites/` now contains 10 pytest-collectable observation-only live tests, 2 gated real-LLM tests, and the Phase 1 manual observation script.
+Current reproducible test baseline (test-count AUDIT, reconciled against actual pytest output 2026-09-21):
+
+~~~
+python -m pytest tests -q
+→ 1093 passed, 12 skipped in 302.20s
+
+Per-directory (counts verified by execution AND collection):
+  python -m pytest tests/unit -q             → 733 passed in 19.47s
+  python -m pytest tests/integration -q      → 65 passed in 47.46s
+  python -m pytest tests/synthetic_forms -q  → 83 passed in 235.56s
+  python -m pytest tests/prompt_injection -q → 28 passed in 3.81s
+  python -m pytest tests/evaluation -q       → 36 passed in 13.50s
+  python -m pytest tests/enterprise -q       → 148 passed in 18.42s
+  Sum: 733 + 65 + 83 + 28 + 36 + 148 = 1093 — matches the full run exactly
+  (no double counting between categories).
+
+Gated (skipped without their env gates; the 12 skips in the full run):
+  RUN_REAL_SITE_TESTS=true python -m pytest tests/real_sites/test_live_shadow.py -q
+  → 10 passed in 71.84s (observation-only, live portals)
+  RUN_OPENROUTER_LIVE_TEST=true python -m pytest tests/real_sites/test_openrouter_live.py -q
+  → 2 tests (real-LLM; status recorded in the Phase 14 expansion section)
+
+Ungated sanity check: python -m pytest tests/real_sites -q → 12 skipped in 0.51s
+~~~
+
+0 non-gated tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Category accounting is DIRECTORY-based: thematic files are counted once in their directory (e.g. `tests/unit/test_prompt_injection.py` counts as unit; the `test_live_*` files count as synthetic_forms). `tests/portal_regression/` and `tests/safety/` remain empty stubs; `tests/live_portal/` holds evidence artifacts only (0 collectable tests); `tests/real_sites/` contains 10 observation-only live tests + 2 gated real-LLM tests + a manual observation script. NO CI is configured for this repository (no `.github/workflows/` or other CI config) — every count above is a local, dated, reproducible execution, not a CI result.
 
 ## Phase 1 evidence
 
@@ -1130,6 +1155,11 @@ pytest tests/synthetic_forms tests/enterprise -q
 FULL REGRESSION: 1057 passed, 0 failures
 (713 unit + 65 integration + 57 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise)
 + 4 gated live tests (not counted in the standard suite; require RUN_REAL_SITE_TESTS=true)
+
+[AUDIT NOTE (2026-09-21): this historical snapshot's category sum is 1047,
+not 1057 — the 10-test gap was never reconciled and the file counts behind
+the split can no longer be reproduced at current HEAD. Superseded by the
+audited baseline at the top of this file; retained verbatim as history.]
 ~~~
 
 ### Phase 14 live-validation expansion (2026-09-21, evidence in tests/live_portal/evidence/)
@@ -1260,7 +1290,12 @@ pytest tests/unit/ -q
 → 733 passed in 19.11s
 
 pytest tests/integration/ tests/synthetic_forms/ -q
-→ 148 passed in 291.61s (65 integration + 80 synthetic)
+→ 148 passed in 291.61s (65 integration + 83 synthetic)
+
+[CORRECTED in the 2026-09-21 test-count audit: the original annotation said
+"(65 integration + 80 synthetic)", but 65 + 80 = 145 while the executed run
+reported 148 — the executed output was correct (synthetic_forms collects 83
+including the new matrix file) and the annotation was the error.]
 
 pytest tests/prompt_injection/ -q
 → 28 passed in 4.14s
@@ -1271,10 +1306,14 @@ pytest tests/evaluation/ -q
 pytest tests/enterprise/ -q
 → 148 passed in 19.77s
 
-FULL REGRESSION: 1092 passed, 0 failures
-(733 unit + 65 integration + 80 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise)
-+ 10 gated live tests + 2 gated real-LLM tests (not counted in the standard
-suite; require RUN_REAL_SITE_TESTS / RUN_OPENROUTER_LIVE_TEST = true)
+FULL REGRESSION: 1093 passed, 12 skipped, 0 failures
+(733 unit + 65 integration + 83 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise)
++ 10 gated live tests + 2 gated real-LLM tests (the 12 skips; not counted in
+the standard suite; require RUN_REAL_SITE_TESTS / RUN_OPENROUTER_LIVE_TEST = true)
+
+[CORRECTED in the 2026-09-21 test-count audit: previously documented as
+"1092 ... 80 synthetic", whose breakdown summed to 1090. Re-run at current
+HEAD: python -m pytest tests -q → 1093 passed, 12 skipped.]
 ~~~
 
 ### Phase 14 exit criteria (all proven)

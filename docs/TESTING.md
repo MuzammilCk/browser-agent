@@ -1,6 +1,37 @@
 # Testing Guide
 
-**Last updated:** 2026-09-18
+**Last updated:** 2026-09-21 (test-count audit; reconciled against actual pytest output)
+
+---
+
+## Authoritative Test Counts (audited 2026-09-21)
+
+Exact commands and results (Python 3.14, Windows, local Chromium):
+
+```
+python -m pytest tests -q
+→ 1093 passed, 12 skipped in 302.20s
+
+python -m pytest tests/unit -q             → 733 passed
+python -m pytest tests/integration -q      → 65 passed
+python -m pytest tests/synthetic_forms -q  → 83 passed
+python -m pytest tests/prompt_injection -q → 28 passed
+python -m pytest tests/evaluation -q       → 36 passed
+python -m pytest tests/enterprise -q       → 148 passed
+
+Sum: 733 + 65 + 83 + 28 + 36 + 148 = 1093 (matches the full run; no double counting)
+```
+
+The 12 skips are the gated tests in `tests/real_sites/` (see below). Each
+file is counted exactly once, in its own directory, even where its theme
+belongs to another category (e.g. `tests/unit/test_prompt_injection.py`
+counts as unit; the `test_live_*` files count as synthetic_forms).
+
+> Historical note: this page previously documented "~457 tests" and
+> "2 known failures" in `test_model_guardrails.py`. Both are stale
+> Phase-1-era figures — the guardrail tests pass at current HEAD and the
+> current totals are above. No CI is configured for this repository; all
+> counts are local, dated executions.
 
 ---
 
@@ -8,54 +39,31 @@
 
 ```
 tests/
-├── unit/                      # Pure logic tests (~416 tests)
-│   ├── test_aria.py
-│   ├── test_vault.py
-│   ├── test_vault_crypto_and_docpolicy.py
-│   ├── test_vault_api.py
-│   ├── test_settings.py
-│   ├── test_policy.py
-│   ├── test_document_policy.py
-│   ├── test_planner_deterministic.py
-│   ├── test_model_guardrails.py     ← 2 known failures (see below)
-│   ├── test_prompt_injection.py
-│   ├── test_llm.py
-│   ├── test_resolvers.py
-│   ├── test_registry.py
-│   ├── test_stall_detector.py
-│   ├── test_tabs.py
-│   ├── test_field_mapper.py
-│   ├── test_confirmation_flow.py
-│   ├── test_element_ranking.py
-│   ├── test_browser_manager.py
-│   ├── test_auth_detection.py
-│   ├── test_runner.py
-│   ├── test_live_fixes.py
-│   ├── test_task_instructions.py
-│   ├── test_plan_outcome.py
-│   ├── test_vision.py
-│   ├── test_vision_fallback_wiring.py
-│   ├── test_api_automate.py
+├── unit/                      # Pure logic tests (733 collected)
+│   ├── ... (50+ files, incl. test_live_validation.py, test_openrouter_*.py)
 │
-├── integration/               # Agent loop + executor with Playwright (~27 tests)
-│   ├── test_executor.py
-│   ├── test_e2e_loop.py
-│   ├── test_multi_tab.py
+├── integration/               # Agent loop + executor with Playwright (65 tests)
 │
-├── synthetic_forms/           # Observer + verification tests (~14 tests)
+├── synthetic_forms/           # Observer/verification/live-pipeline fixtures (83 tests)
 │   ├── test_observer.py
 │   ├── test_verification.py
+│   ├── test_live_shadow_offline.py        (9)
+│   ├── test_live_controlled_offline.py    (6)
+│   └── test_live_controlled_matrix.py     (20)
 │
-├── real_sites/                # Observation-only tests
-│   ├── test_pmkisan_observe.py    # PM-KISAN login page (no data submission)
+├── prompt_injection/          # Dedicated injection suite (28 tests)
+├── evaluation/                # Metrics/trace/acceptance incl. live artifacts (36 tests)
+├── enterprise/                # Gateway/worker/queue/vault/audit (148 tests)
 │
-├── safety/                    # (stub — prompt injection tests planned)
-├── prompt_injection/          # (stub — dedicated tests planned)
-└── portal_regression/         # (stub — portal regression tests planned)
+├── real_sites/                # GATED: 12 tests total, ALL skipped without env gates
+│   ├── test_live_shadow.py        # 10 observation-only live tests (RUN_REAL_SITE_TESTS=true)
+│   ├── test_openrouter_live.py    # 2 real-LLM tests (RUN_OPENROUTER_LIVE_TEST=true)
+│   └── test_pmkisan_observe.py    # manual observation script (not pytest-collectable)
+│
+├── live_portal/               # Evidence artifacts only (report.json/trace.jsonl) — 0 tests
+├── safety/                    # (stub — only __init__.py)
+└── portal_regression/         # (stub — only __init__.py)
 ```
-
-**Total: ~457 tests** across unit, integration, synthetic_forms, and real_sites.
-**safety/, prompt_injection/, portal_regression/** are stubs with only `__init__.py` — test scaffolding exists but actual test files are not yet written.
 
 ---
 
@@ -115,14 +123,15 @@ python -m pytest tests/unit/ --cov=app --cov-report=term-missing -q
 
 ## Known Failures
 
-### `test_model_guardrails.py` — 2 failures
+None at current HEAD (audited 2026-09-21: `python -m pytest tests -q` →
+1093 passed, 12 gated skips, 0 failures).
 
-| Test | Failure Reason |
-|------|---------------|
-| `test_refusal_happens_before_browser_launch` | `.env` has an expired/invalid OpenRouter API key. The test expects a refusal before browser launch, but since the model returns 401, the flow falls into `waiting_for_user` state instead of `failed`. This is **expected behavior with a real API key** — the test should pass in CI with a mock or valid key. |
-| `test_free_tier_env_model_also_refused` | Same root cause — API key 401 cascades into different error path. |
+### Resolved: `test_model_guardrails.py` — 2 failures (Phase-1 era)
 
-**Not a code defect** — these tests require a valid OpenRouter API key (or mocking in CI).
+| Test | Historical Failure Reason | Resolution |
+|------|---------------------------|------------|
+| `test_refusal_happens_before_browser_launch` | `.env` had `ALLOW_ANONYMOUS_MODEL_WITH_VAULT=true`, disabling the Z6 model guard | Fixed by resetting the flag to `false`; passes at current HEAD |
+| `test_free_tier_env_model_also_refused` | Same root cause | Same fix; passes at current HEAD |
 
 ---
 
@@ -154,14 +163,21 @@ Tests using synthetic HTML forms (no real government portals):
 - `test_observer.py` — ARIA snapshot + DOM extraction
 - `test_verification.py` — Per-action verification (click, fill, check, select, scroll, press)
 
-### Real Site Tests (`tests/real_sites/`)
-Observation-only tests against real government portals:
-- `test_pmkisan_observe.py` — PM-KISAN login page observation (no form submission)
+### Real Site Tests (`tests/real_sites/`) — GATED
+Observation-only tests against real government portals. **All 12 are skipped
+by default** (verified: `python -m pytest tests/real_sites -q` → 12 skipped):
+- `test_live_shadow.py` — 10 tests; requires `RUN_REAL_SITE_TESTS=true`;
+  a portal that cannot be reached yields PORTAL_UNAVAILABLE (an environment
+  condition, recorded honestly — the test still passes or skips, never
+  fabricates)
+- `test_openrouter_live.py` — 2 tests; requires `RUN_OPENROUTER_LIVE_TEST=true`
+  and a configured OpenRouter API key; skips cleanly when either is absent
+- `test_pmkisan_observe.py` — manual Phase-1 observation script (not
+  pytest-collectable)
 
 ### Stub Directories
-- `tests/safety/` — Placeholder for security hardening tests
-- `tests/prompt_injection/` — Placeholder for dedicated prompt injection tests (some tests exist in `tests/unit/test_prompt_injection.py`)
-- `tests/portal_regression/` — Placeholder for cross-portal consistency tests
+- `tests/safety/` — placeholder (only `__init__.py`)
+- `tests/portal_regression/` — placeholder (only `__init__.py`)
 
 ---
 

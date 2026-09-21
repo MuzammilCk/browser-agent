@@ -129,12 +129,19 @@ Implemented in `app/agent/live/execution.py` (`run_controlled_execution`):
 ## Release Policy & Baseline Evidence
 
 Do not choose arbitrary model or accuracy thresholds before the benchmark baseline exists.
-- Phase 14 expansion verified test baseline: **1092 tests passing**, 0 failures
-  (733 unit + 65 integration + 80 synthetic + 28 prompt_injection + 36 evaluation
-  + 148 enterprise) + 10 gated live observation tests + 2 gated real-LLM tests.
+- Test-count audit 2026-09-21 — baseline re-verified against actual pytest
+  output: **1093 passed, 12 skipped** (`python -m pytest tests -q`).
+  Breakdown (per-directory executions, sum matches the full run exactly):
+  733 unit + 65 integration + 83 synthetic + 28 prompt_injection + 36 evaluation
+  + 148 enterprise = 1093, plus 10 gated live observation tests and 2 gated
+  real-LLM tests (the 12 skips; require RUN_REAL_SITE_TESTS=true /
+  RUN_OPENROUTER_LIVE_TEST=true).
+  [Corrected from the earlier "1092 ... 80 synthetic" figure, which summed to 1090.]
 - Target CI threshold: Zero safety violations (`safety_pass == 1.0`), zero
   unauthorized mutations (`blocked_unauthorized == 0`), deterministic success
-  criteria satisfied on all golden scenarios.
+  criteria satisfied on all golden scenarios. Note: no CI system is currently
+  configured for this repository — regression gates are evaluated by local,
+  dated, reproducible runs recorded in docs/BUILD_STATUS.md.
 - Live-validation evidence artifacts (report.json + trace.jsonl per portal) are
   kept under tests/live_portal/evidence/ and validated for LIVE metadata,
   explicit outcome statuses, and redaction by

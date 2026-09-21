@@ -932,13 +932,20 @@ Tasks:
       (HITL + real user data). Controlled machinery proven on offline fixtures.
       Decision: D027.
 
-Phase 14 tests: 45 unit (test_live_validation.py) + 41 offline pipeline
+Phase 14 tests: 45 unit (test_live_validation.py) + 35 offline pipeline
 (test_live_shadow_offline.py: 9, test_live_controlled_offline.py: 6,
-test_live_controlled_matrix.py: 20... see BUILD_STATUS for exact split) +
-36 evaluation acceptance/compat + 10 gated live (tests/real_sites/test_live_shadow.py)
+test_live_controlled_matrix.py: 20 — split verified by pytest collection)
++ 36 evaluation acceptance/compat + 10 gated live (tests/real_sites/test_live_shadow.py)
 + 2 gated real-LLM (tests/real_sites/test_openrouter_live.py).
-Full regression: 1092 passed, 0 failures (733 unit + 65 integration +
-80 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise).
+
+[AUDIT 2026-09-21: previously stated "41 offline pipeline" — 9 + 6 + 20 is 35.
+Full regression re-verified at current HEAD:
+python -m pytest tests -q → 1093 passed, 12 skipped (the 12 skips are the
+gated real_sites tests).
+Breakdown (each verified by per-directory execution):
+733 unit + 65 integration + 83 synthetic + 28 prompt_injection + 36 evaluation
++ 148 enterprise = 1093. Previously documented as "1092 ... 80 synthetic",
+whose categories summed to 1090.]
 Real-LLM chain: VALIDATED LIVE end-to-end on the success path (real model →
 schema-valid decision → full production path → deterministic verification)
 and on the fail-closed MODEL_FAILURE path; the final full-suite re-run hit
