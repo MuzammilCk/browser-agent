@@ -107,8 +107,130 @@ INDIA_PORTAL = PortalProfile(
     last_verified_at="2026-09-20",
 )
 
+APPRENTICESHIP_PORTAL = PortalProfile(
+    portal_id="apprenticeship",
+    name="National Apprenticeship Training Scheme (apprenticeshipindia.gov.in)",
+    official_origin="https://www.apprenticeshipindia.gov.in",
+    portal_class=PortalClass.TRAINING,
+    entrypoint="https://www.apprenticeshipindia.gov.in",
+    trusted_domains=["apprenticeshipindia.gov.in"],
+    observed_workflow=(
+        "Apprenticeship training portal: opportunity search by district/trade, "
+        "establishment and TNI directories. Candidate registration and "
+        "applications sit behind login — human boundary."
+    ),
+    authentication_requirements=(
+        "Candidate/establishment features require registration + login — human boundary"
+    ),
+    document_requirements="None on public pages",
+    known_constraints=["JS-driven navigation on landing page"],
+    safe_test_path="Observation of landing page + public search semantics; no submission",
+    last_verified_at="2026-09-21",
+)
+
+UDISE_PORTAL = PortalProfile(
+    portal_id="udiseplus",
+    name="UDISE+ (udiseplus.gov.in)",
+    official_origin="https://udiseplus.gov.in",
+    portal_class=PortalClass.EDUCATION,
+    entrypoint="https://udiseplus.gov.in",
+    trusted_domains=["udiseplus.gov.in"],
+    observed_workflow=(
+        "School education data system: public dashboards, school locator "
+        "search, report links. School data entry requires admin login — "
+        "human boundary."
+    ),
+    authentication_requirements=(
+        "School data entry requires administrator login — human boundary"
+    ),
+    document_requirements="None on public pages",
+    known_constraints=["Report downloads may require navigation past landing page"],
+    safe_test_path="Observation of landing page + public search semantics; no submission",
+    last_verified_at="2026-09-21",
+)
+
+PARIVAHAN_PORTAL = PortalProfile(
+    portal_id="parivahan",
+    name="Parivahan Sewa (parivahan.gov.in)",
+    official_origin="https://parivahan.gov.in",
+    portal_class=PortalClass.TRANSPORT,
+    entrypoint="https://parivahan.gov.in",
+    trusted_domains=["parivahan.gov.in"],
+    observed_workflow=(
+        "Transport services gateway: license/vehicle service selection, "
+        "state selection dropdowns, informational pages. All transactions "
+        "(applications, payments) sit behind auth + payment boundaries."
+    ),
+    authentication_requirements=(
+        "Applications require login; payments are human boundaries"
+    ),
+    document_requirements="License/RC services require uploaded documents — vault-scoped, human-gated",
+    known_constraints=[
+        "Heavy JS SPA on service pages; state selection precedes services",
+    ],
+    safe_test_path="Observation of landing page only; no service selection submission",
+    last_verified_at="2026-09-21",
+)
+
+DIGILOCKER_PORTAL = PortalProfile(
+    portal_id="digilocker",
+    name="DigiLocker (digilocker.gov.in)",
+    official_origin="https://www.digilocker.gov.in",
+    portal_class=PortalClass.IDENTITY_DOCUMENT,
+    entrypoint="https://www.digilocker.gov.in",
+    trusted_domains=["digilocker.gov.in"],
+    observed_workflow=(
+        "Digital document repository: informational pages, document issuer "
+        "directory, public search. All document access requires Aadhaar "
+        "authentication — strictly human boundary."
+    ),
+    authentication_requirements=(
+        "Document access requires Aadhaar + OTP login — human boundary, "
+        "never bypassed; observation stops at the boundary"
+    ),
+    document_requirements=(
+        "Issued documents are vault-class sensitive data — never accessed "
+        "autonomously"
+    ),
+    known_constraints=["Auth boundary is the primary workflow surface"],
+    safe_test_path="Observation of landing page only; no authentication attempt",
+    last_verified_at="2026-09-21",
+)
+
+PASSPORT_PORTAL = PortalProfile(
+    portal_id="passport",
+    name="Passport Seva (passportindia.gov.in)",
+    official_origin="https://www.passportindia.gov.in",
+    portal_class=PortalClass.APPOINTMENTS,
+    entrypoint="https://www.passportindia.gov.in",
+    trusted_domains=["passportindia.gov.in"],
+    observed_workflow=(
+        "Passport services portal: information pages, PSK locator, fee "
+        "calculator. Appointment booking sits behind login + payment — "
+        "human boundaries."
+    ),
+    authentication_requirements=(
+        "Application/appointment requires login; fee payment is a human boundary"
+    ),
+    document_requirements="Applications require document upload — vault-scoped, human-gated",
+    known_constraints=["Landing page is largely informational; appointment flow is auth-gated"],
+    safe_test_path="Observation of landing page only; no booking or payment attempt",
+    last_verified_at="2026-09-21",
+)
+
 _PROFILES: dict[str, PortalProfile] = {
-    p.portal_id: p for p in (PMKISAN_PORTAL, MYScheme_PORTAL, NCS_PORTAL, INDIA_PORTAL)
+    p.portal_id: p
+    for p in (
+        PMKISAN_PORTAL,
+        MYScheme_PORTAL,
+        NCS_PORTAL,
+        INDIA_PORTAL,
+        APPRENTICESHIP_PORTAL,
+        UDISE_PORTAL,
+        PARIVAHAN_PORTAL,
+        DIGILOCKER_PORTAL,
+        PASSPORT_PORTAL,
+    )
 }
 
 

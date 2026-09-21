@@ -705,6 +705,70 @@ Status: ACCEPTED — evidence in tests/live_portal/evidence/ (pmkisan,
 myscheme, ncs, indiaportal) and tests/real_sites/test_live_shadow.py.
 
 
+## D028 — Phase 14 live-validation expansion: full portal-class coverage, bounded approvals, and honest failure classification
+
+Phase 14 live validation (2026-09-21):
+
+1. Full portal-class coverage: the live registry now spans all nine
+   intended classes — welfare (pmkisan), certificate (myscheme),
+   recruitment (ncs), grievance (services.india.gov.in), training
+   (apprenticeshipindia.gov.in), education (udiseplus.gov.in), transport
+   (parivahan.gov.in), identity_document (digilocker.gov.in), and
+   appointments (passportindia.gov.in). apprenticeshipindia.gov.in was
+   added to the site registry (it was absent). Every expanded portal was
+   live-validated observation-only with persisted evidence. NO live
+   mutation was performed on any portal (D027 unchanged): all expanded
+   surfaces are landing/discovery pages, and their workflow interiors sit
+   behind authentication/payment/document-upload boundaries that remain
+   human-gated.
+2. Honest mapping evidence: landing pages without data-entry forms record
+   `mapping_status=UNSUPPORTED` (mapped=0) — never forced to MAPPING_SUCCESS
+   to inflate coverage. The one portal with a mappable public field (NCS
+   job search) records MAPPING_SUCCESS with its single HIGH-confidence
+   binding. UNSUPPORTED ≠ failure; it is recorded evidence that the
+   deterministic mapper found no citizen-data field to bind.
+3. Failure classification is non-collapsing end-to-end (WS2): in controlled
+   execution, ToolResult error codes now map explicitly — POLICY_DENIED →
+   POLICY_BLOCKED; USER_ACTION_REQUIRED / CONFIRMATION_REQUIRED →
+   HITL_REQUIRED (a human boundary, never an agent failure);
+   VERIFICATION_FAILED → AGENT_FAILURE; everything else → AGENT_FAILURE.
+   STALE_TARGET_STOPPED (semantic target absent from the fresh observation)
+   is recorded as ENVIRONMENT_FAILURE with a per-step evidence row — the
+   run stopped rather than guessed, which is the machinery working.
+4. Approvals are BOUNDED authorizations: HumanReviewDecision carries an
+   optional `expires_at`; the controlled-execution gate rejects expired or
+   unparseable-expiry approvals fail-closed (same path as forged/
+   transplanted decisions). Phase 14 live-validation callers always set an
+   explicit expiry; empty expiry remains possible only when the issuing
+   HITL system records none.
+5. The deterministic controlled allowlist now also forbids `field:mfa` and
+   `field:passwd` semantic prefixes (password/OTP/CAPTCHA/PIN were already
+   forbidden). Prohibition is enforced by the fixed gate — independent of
+   any model output — and is proven by an explicit denial matrix
+   (click/upload/password/otp/captcha/mfa/pin/payment/final-legal).
+6. Real-LLM compatibility (WS4) closed its last gap: the OpenRouter
+   completion budget is the configurable `openrouter_max_tokens` setting
+   (default 4096) because reasoning-style models spend hidden reasoning
+   tokens from the same budget — a hardcoded 4096 truncated the visible
+   JSON decision (finish_reason=length) and the reasoner failed closed with
+   DECISION_PARSE_FAILED. The system prompt now shows the EXACT decision
+   JSON shape (nested `action` object) after live probing showed small free
+   models otherwise emit non-conforming shapes they never repair. Both
+   changes are contract clarifications: validation, policy, and the
+   execution path are unchanged, and model failures still fail closed.
+7. Free-tier model slugs churn: the daily free quota (50 requests/day per
+   account) and per-model availability both change without notice. The
+   gated real-LLM test skips cleanly without a key, fails honestly on
+   quota exhaustion, and the operator pins working slugs via .env
+   (documented in BUILD_STATUS). No model identity is hard-coded in source.
+
+Status: ACCEPTED — evidence in tests/live_portal/evidence/ (9 portals),
+tests/real_sites/test_live_shadow.py (10 gated live tests),
+tests/synthetic_forms/test_live_controlled_matrix.py (20 offline controlled
+matrix tests), tests/unit/test_live_validation.py (45 unit tests), and
+tests/unit/test_openrouter_live_contract.py (real-gateway contract tests).
+
+
 
 
 

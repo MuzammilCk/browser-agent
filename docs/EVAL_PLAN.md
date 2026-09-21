@@ -48,8 +48,12 @@ Implemented in `app/agent/live/shadow.py` (`run_live_shadow`):
   HITL_REQUIRED / AMBIGUOUS / UNSUPPORTED / POLICY_BLOCKED / PORTAL_UNAVAILABLE
   / ENVIRONMENT_FAILURE / AGENT_FAILURE / SAFETY_BLOCKED.
 
-Phase 14 live evidence (2026-09-20): PM-KISAN, MyScheme, NCS shadow-validated
-successfully; india.gov.in recorded ANTI_BOT_BLOCK. Artifacts:
+Phase 14 live evidence (2026-09-21): full portal-class coverage — PM-KISAN,
+MyScheme, NCS, apprenticeshipindia (training), UDISE+ (education), Parivahan
+(transport), DigiLocker (identity_document), Passport Seva (appointments)
+shadow-validated successfully; services.india.gov.in recorded ANTI_BOT_BLOCK.
+Landing pages without data-entry forms record mapping UNSUPPORTED honestly
+(mapped=0) — never forced to MAPPING_SUCCESS. Artifacts:
 tests/live_portal/evidence/<portal>/report.json + trace.jsonl.
 
 ### Layer D — Controlled Live Execution (Implemented — Phase 14; live use deferred, D027)
@@ -57,18 +61,27 @@ Permits bounded low/medium-risk mutations with human authorization. Strictly zer
 
 Implemented in `app/agent/live/execution.py` (`run_controlled_execution`):
 - Requires a successful shadow run's review request PLUS a signed human review
-  decision (SHA-256 digest + HMAC; transplanted or forged approvals rejected).
+  decision (SHA-256 digest + HMAC; transplanted or forged approvals rejected;
+  expired or unparseable-expiry approvals rejected fail-closed — approvals are
+  bounded authorizations).
 - Deterministic action allowlist: fill/select/check/uncheck only; click/upload
-  never; password/otp/captcha/pin semantic targets never; submit/payment text
-  never (final boundary is human-gated).
+  never; password/otp/captcha/mfa/pin semantic targets never; submit/payment
+  text never (final boundary is human-gated).
 - Every mutation flows through the EXISTING ToolRegistry → PolicyEngine →
   BrowserExecutor → verification path; per-step semantic re-binding (fresh ref
   + observation_id) or STALE_TARGET_STOPPED; UNCERTAIN verification counts as
-  failure; POLICY_DENIED stops the run.
-- No live controlled execution has been performed yet (Phase 14 portals were
+  failure; failure classification is non-collapsing: POLICY_DENIED →
+  POLICY_BLOCKED, USER_ACTION_REQUIRED/CONFIRMATION_REQUIRED → HITL_REQUIRED,
+  VERIFICATION_FAILED → AGENT_FAILURE, stale target → ENVIRONMENT_FAILURE.
+- No live controlled execution has been performed (Phase 14 portals are
   observation-class; D027). The machinery is proven on offline fixtures with
   real Chromium (tests/evaluation/test_live_portal_acceptance.py,
-  tests/synthetic_forms/test_live_controlled_offline.py).
+  tests/synthetic_forms/test_live_controlled_offline.py, and the full
+  WS3 matrix: tests/synthetic_forms/test_live_controlled_matrix.py —
+  select/check execution, semantic re-binding over stale refs, sensitive
+  value_ref → HITL_REQUIRED, approval expiry, world-state drift stop,
+  Playwright timeout → ENVIRONMENT_FAILURE, and the prohibited-actions
+  denial matrix).
 
 ---
 
@@ -116,5 +129,13 @@ Implemented in `app/agent/live/execution.py` (`run_controlled_execution`):
 ## Release Policy & Baseline Evidence
 
 Do not choose arbitrary model or accuracy thresholds before the benchmark baseline exists.
-- Phase 12 verified test baseline: **850 tests passing**, 0 failures.
-- Target CI threshold: Zero safety violations (`safety_pass == 1.0`), zero unauthorized mutations (`blocked_unauthorized == 0`), deterministic success criteria satisfied on all golden scenarios.
+- Phase 14 expansion verified test baseline: **1092 tests passing**, 0 failures
+  (733 unit + 65 integration + 80 synthetic + 28 prompt_injection + 36 evaluation
+  + 148 enterprise) + 10 gated live observation tests + 2 gated real-LLM tests.
+- Target CI threshold: Zero safety violations (`safety_pass == 1.0`), zero
+  unauthorized mutations (`blocked_unauthorized == 0`), deterministic success
+  criteria satisfied on all golden scenarios.
+- Live-validation evidence artifacts (report.json + trace.jsonl per portal) are
+  kept under tests/live_portal/evidence/ and validated for LIVE metadata,
+  explicit outcome statuses, and redaction by
+  tests/evaluation/test_live_portal_acceptance.py.

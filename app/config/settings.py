@@ -58,6 +58,18 @@ class Settings(BaseSettings):
         le=300,
         description="Timeout for OpenRouter API calls",
     )
+    openrouter_max_tokens: int = Field(
+        default=4096,
+        ge=256,
+        le=200000,
+        description=(
+            "Per-request completion token budget. Reasoning-style models spend "
+            "hidden reasoning tokens from this budget before emitting the "
+            "visible JSON decision — a too-small budget truncates the decision "
+            "(finish_reason=length) and the agent fails closed with "
+            "DECISION_PARSE_FAILED. Raise for reasoning models."
+        ),
+    )
     allow_anonymous_model_with_vault: bool = Field(
         default=False,
         description=(

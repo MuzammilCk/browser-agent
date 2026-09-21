@@ -92,15 +92,23 @@ class OpenRouterGateway(LLMGateway):
         user: str,
         schema: dict | None = None,
         temperature: float = 0.0,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
         images: list[bytes] | None = None,
     ) -> LLMResponse:
         """Send a completion request to OpenRouter.
 
         Uses structured JSON output when schema is provided.
         Retries on timeout, 429, and 5xx errors.
+
+        ``max_tokens`` defaults to the configurable
+        ``openrouter_max_tokens`` setting (Phase 14: reasoning-style models
+        spend hidden reasoning tokens from the same budget, so a small
+        hardcoded cap truncates the visible JSON decision —
+        finish_reason=length — and the agent must then fail closed).
         """
         model = self._settings.openrouter_model
+        if max_tokens is None:
+            max_tokens = self._settings.openrouter_max_tokens
         # Vision requests go to the configured vision model when set (audit C10)
         if images and self._settings.openrouter_vision_model:
             model = self._settings.openrouter_vision_model

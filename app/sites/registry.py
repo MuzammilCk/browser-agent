@@ -1202,6 +1202,23 @@ _CENTRAL_PORTALS: list[dict[str, Any]] = [
         "interaction_classes": ["A", "C", "G"],
     },
     {
+        "domain": "apprenticeshipindia.gov.in",
+        "official_name": "National Apprenticeship Promotion Scheme (NAPS)",
+        "category": "Governance",
+        "subcategory": "Training & Apprenticeship",
+        "url": "https://www.apprenticeshipindia.gov.in",
+        "description": "Apprenticeship training search, registration, and establishment directory",
+        "tasks": [
+            {"name": "Search Apprenticeship Opportunities", "description": "Browse apprenticeship openings by district and trade",
+                "instructions": "Navigate to the portal and perform: Browse apprenticeship openings by district and trade. Look for relevant links or buttons on the page that match this task. Follow the on-screen instructions to complete the process."},
+            {"name": "Find Training Centres", "description": "Locate designated trade training institutes",
+                "instructions": "Navigate to the portal and perform: Locate designated trade training institutes. Look for relevant links or buttons on the page that match this task. Follow the on-screen instructions to complete the process."},
+            {"name": "View Trade Directory", "description": "Explore apprenticeship trades and their curricula",
+                "instructions": "Navigate to the portal and perform: Explore apprenticeship trades and their curricula. Look for relevant links or buttons on the page that match this task. Follow the on-screen instructions to complete the process."},
+        ],
+        "interaction_classes": ["A"],
+    },
+    {
         "domain": "ecourts.gov.in",
         "official_name": "eCourts Services",
         "category": "Governance",

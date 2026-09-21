@@ -325,14 +325,18 @@ architecture (`app/agent/live/*`):
 LIVE_SHADOW: observe → origin check → semantic extraction → deterministic
 field mapping → planned action trace → human review request (recorded only)
 
-LIVE_CONTROLLED_EXECUTION: signed human review → deterministic allowlist →
-semantic re-binding → ToolRegistry → PolicyEngine → BrowserExecutor →
-verification → WorldState (per action)
+LIVE_CONTROLLED_EXECUTION: signed (bounded) human review → deterministic
+allowlist → semantic re-binding → ToolRegistry → PolicyEngine →
+BrowserExecutor → verification → WorldState (per action)
 ~~~
 
 Invariants: shadow mode never executes and never invokes the reasoner (model
 output cannot flip the mode); controlled execution requires a signed review
-decision bound to the exact plan; submit/payment/auth targets are
-deterministically excluded; environment conditions (anti-bot blocks,
-timeouts) are recorded as such and never collapsed into agent failures.
-Decision records: docs/DECISIONS.md D026, D027.
+decision bound to the exact plan (approvals are bounded — expiry is
+enforced); submit/payment/auth/mfa targets are deterministically excluded;
+environment conditions (anti-bot blocks, timeouts, world-state drift stops)
+are recorded as such and never collapsed into agent failures; mapping
+UNSUPPORTED is recorded honestly, never upgraded. All nine intended portal
+classes have trusted profiles and live shadow evidence; no live mutation has
+been performed.
+Decision records: docs/DECISIONS.md D026, D027, D028.

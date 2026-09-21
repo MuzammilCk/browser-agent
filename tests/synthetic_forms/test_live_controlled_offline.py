@@ -112,8 +112,11 @@ async def test_controlled_rejects_transplanted_approval(offline_controlled_profi
     # The transplanted approval binds to the OLD plan's digest, but the step
     # targets a semantic ID absent from the page — semantic re-binding stops
     # (STALE_TARGET_STOPPED) instead of executing anything unreviewed.
-    assert report.final_status == LiveOutcomeStatus.AGENT_FAILURE
+    # The stop is recorded honestly as an environment/state condition (the
+    # world drifted from the reviewed plan), NOT an agent failure.
+    assert report.final_status == LiveOutcomeStatus.ENVIRONMENT_FAILURE
     assert report.executed_actions[0]["result"] == "STALE_TARGET_STOPPED"
+    assert "detail" in report.executed_actions[0]
 
 
 @pytest.mark.asyncio

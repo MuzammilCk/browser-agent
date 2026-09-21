@@ -75,12 +75,20 @@ class TestPhase12LiveCompatibility:
 
     def test_persisted_live_evidence_carries_live_metadata(self):
         """The evidence artifacts produced by the live validation runs carry
-        explicit LIVE metadata and outcome statuses."""
+        explicit LIVE metadata and outcome statuses. Phase 14 live-validation
+        expansion: every intended portal class must have evidence."""
         import json
 
         evidence_dir = Path(__file__).parents[1] / "live_portal" / "evidence"
-        portals = [p for p in ("pmkisan", "myscheme", "ncs", "indiaportal") if (evidence_dir / p / "report.json").exists()]
+        expected_portals = (
+            "pmkisan", "myscheme", "ncs", "indiaportal",
+            "apprenticeship", "udiseplus", "parivahan", "digilocker", "passport",
+        )
+        portals = [p for p in expected_portals if (evidence_dir / p / "report.json").exists()]
         assert portals, "live evidence must have been produced by the validation run"
+        assert set(portals) == set(expected_portals), (
+            f"evidence missing for: {sorted(set(expected_portals) - set(portals))}"
+        )
 
         for pid in portals:
             data = json.loads((evidence_dir / pid / "report.json").read_text(encoding="utf-8"))

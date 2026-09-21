@@ -4,9 +4,13 @@ Implements the narrow DecisionModel protocol over the EXISTING
 LLMGateway (app/llm/openrouter.py). This module is the ONLY place the
 Phase 4 loop touches OpenRouter specifics:
 
-- structured output: the decision JSON schema from
-  build_decision_json_schema() is passed to the gateway, which sets
-  response_format json_schema (strict) on the request;
+- structured output: the inner decision JSON schema from
+  build_decision_json_schema()["schema"] is passed to the gateway, which
+  itself wraps it as response_format: {type: json_schema, json_schema:
+  {name, strict, schema}} on the request. (The gateway owns the
+  response_format envelope; the adapter passes only the inner JSON
+  schema — passing the pre-built envelope would double-wrap it and the
+  API would reject the request with 400.)
 - schema violation handling: strict-JSON providers still can return
   schema-violating content; LLMMalformedResponseError and unparseable
   JSON both surface as InvalidModelOutput — which the AgentReasoner
@@ -42,7 +46,11 @@ class OpenRouterDecisionModel:
 
     def __init__(self, gateway: LLMGateway) -> None:
         self._gateway = gateway
-        self._schema = build_decision_json_schema()
+        # The gateway builds the response_format envelope itself; pass the
+        # INNER JSON schema only (protocol.py builds it from the same
+        # pydantic model the parser validates with, so prompt and
+        # validation contracts cannot drift).
+        self._schema = build_decision_json_schema()["schema"]
 
     async def decide(self, *, system: str, context: str) -> dict:
         response = await self._gateway.complete(

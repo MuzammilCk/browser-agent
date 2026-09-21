@@ -373,6 +373,10 @@ class HumanReviewDecision(BaseModel):
     # so a decision cannot be transplanted onto a different action set.
     request_digest: str
     signature: str
+    # Bounded authorization: approvals expire (ISO-8601 UTC). An empty value
+    # means no expiry was recorded by the issuing HITL system; the Phase 14
+    # live-validation tests always set an explicit expiry.
+    expires_at: str = ""
 
     def digest_matches(self, request: HumanReviewRequest) -> bool:
         return hmac.compare_digest(self.request_digest, request_digest(request))
@@ -407,6 +411,8 @@ FORBIDDEN_CONTROLLED_SEMANTIC_PREFIXES = (
     "field:otp",
     "field:captcha",
     "field:pin",
+    "field:mfa",
+    "field:passwd",
 )
 
 # SUBMISSION keywords that mark a control as the final-legal boundary.

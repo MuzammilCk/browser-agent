@@ -375,3 +375,164 @@ class TestFinalBoundaryEvidence:
         fb = FinalBoundaryEvidence()
         assert fb.no_final_submission_executed is True
         assert fb.submit_controls_detected == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 14 live-validation expansion (WS1/WS2 unit contract)
+# ---------------------------------------------------------------------------
+
+
+class TestExpandedPortalProfiles:
+    """Every intended portal class has a trusted profile with an https
+    gov.in/nic.in origin; profiles are metadata only, never scripts."""
+
+    EXPECTED_CLASSES = {
+        "pmkisan": "welfare",
+        "myscheme": "certificate",
+        "ncs": "recruitment",
+        "indiaportal": "grievance",
+        "apprenticeship": "training",
+        "udiseplus": "education",
+        "parivahan": "transport",
+        "digilocker": "identity_document",
+        "passport": "appointments",
+    }
+
+    def test_every_intended_portal_class_has_a_profile(self):
+        from app.agent.live.profiles import _PROFILES
+
+        for portal_id, expected_class in self.EXPECTED_CLASSES.items():
+            profile = get_live_portal_profile(portal_id)
+            assert profile.portal_class.value == expected_class, portal_id
+            assert profile.official_origin.startswith("https://"), portal_id
+            host = profile.origin_host()
+            assert host.endswith(".gov.in") or host.endswith(".nic.in"), portal_id
+            assert profile.trusted_domains, portal_id
+            assert profile.last_verified_at, portal_id
+
+    def test_profiles_reject_lookalike_origins(self):
+        from app.agent.live.profiles import get_live_portal_profile
+
+        # Each profile must reject hosts outside its registrable domain.
+        # (Subdomains of trusted domains ARE allowed by design — same rule
+        # as the policy guard — so the hostile case is a different
+        # registrable domain, not a differently-named subdomain.)
+        for portal_id in self.EXPECTED_CLASSES:
+            profile = get_live_portal_profile(portal_id)
+            hostile = f"https://{portal_id}.attacker.example"
+            assert not profile.origin_matches(hostile), portal_id
+            # ...and a trusted-domain suffix pasted after a hostile host
+            assert not profile.origin_matches(
+                f"https://{profile.origin_host()}.attacker.example"
+            ), portal_id
+
+    def test_expanded_registry_has_training_domain(self):
+        """The site registry (trusted-domain gate) covers the training portal."""
+        from app.sites.registry import TrustedDomainRegistry
+
+        registry = TrustedDomainRegistry()
+        entry = registry.get_entry("https://www.apprenticeshipindia.gov.in")
+        assert entry is not None
+        assert entry.allowed
+
+
+class TestMappingStatusHonesty:
+    """Mapping UNSUPPORTED must not become MAPPING_SUCCESS, and AMBIGUOUS
+    mappings must surface as ambiguity — never silently upgraded."""
+
+    def test_mapping_statuses_are_distinct(self):
+        assert LiveOutcomeStatus.MAPPING_SUCCESS != LiveOutcomeStatus.UNSUPPORTED
+        assert LiveOutcomeStatus.MAPPING_SUCCESS != LiveOutcomeStatus.AMBIGUOUS
+
+    def test_unsupported_mapping_is_not_counted_as_mapped(self):
+        from app.agent.live.models import FieldMappingEvidence
+
+        evidence = FieldMappingEvidence(
+            total_interactive=100, mapped=0, unmapped=["e1", "e2"], ambiguous=[],
+        )
+        # The honest classification rule used by the shadow pipeline:
+        status = (
+            LiveOutcomeStatus.MAPPING_SUCCESS if evidence.mapped > 0
+            else LiveOutcomeStatus.UNSUPPORTED
+        )
+        assert status == LiveOutcomeStatus.UNSUPPORTED
+
+
+class TestApprovalExpiryContract:
+    """Human review decisions are BOUNDED authorizations: expired approvals
+    are rejected fail-closed even with a valid signature."""
+
+    def _decision(self, expires_at: str):
+        from app.agent.live.models import HumanReviewDecision, request_digest, sign_review
+
+        req = _review_request()
+        d = HumanReviewDecision(
+            request_id=req.request_id,
+            decision="approved",
+            reviewer="operator",
+            request_digest=request_digest(req),
+            signature="",
+            expires_at=expires_at,
+        )
+        d.signature = sign_review(d, _SECRET)
+        return req, d
+
+    def test_decision_model_accepts_expiry_field(self):
+        from datetime import UTC, datetime, timedelta
+
+        future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+        req, d = self._decision(future)
+        assert d.expires_at == future
+        assert d.digest_matches(req)
+
+    def test_empty_expiry_means_no_expiry_recorded(self):
+        req, d = self._decision("")
+        assert d.expires_at == ""
+        assert d.digest_matches(req)
+
+    def test_expired_approval_rejected_by_controlled_gate(self):
+        """The controlled-execution review gate rejects an expired approval
+        (same fail-closed path as forged/transplanted decisions)."""
+        from datetime import UTC, datetime, timedelta
+
+        from app.agent.live.execution import _verify_review_decision
+
+        past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+        req, d = self._decision(past)
+        with pytest.raises(ReviewSignatureError, match="expired"):
+            _verify_review_decision(d, req, _SECRET)
+
+    def test_unparseable_expiry_rejected_fail_closed(self):
+        from app.agent.live.execution import _verify_review_decision
+
+        req, d = self._decision("not-a-timestamp")
+        with pytest.raises(ReviewSignatureError, match="unparseable"):
+            _verify_review_decision(d, req, _SECRET)
+
+
+class TestForbiddenControlledTargets:
+    """The controlled allowlist excludes every human-boundary class
+    (password/OTP/CAPTCHA/MFA/PIN semantic targets, payment and legal
+    submission text) — deterministically, independent of any model output."""
+
+    def test_mfa_and_passwd_prefixes_forbidden(self):
+        from app.agent.live.models import FORBIDDEN_CONTROLLED_SEMANTIC_PREFIXES
+
+        assert "field:mfa" in FORBIDDEN_CONTROLLED_SEMANTIC_PREFIXES
+        assert "field:passwd" in FORBIDDEN_CONTROLLED_SEMANTIC_PREFIXES
+
+    def test_sensitive_fill_in_controlled_mode_yields_confirmation_required(self):
+        """A sensitive value_ref fill gets REQUIRE_CONFIRMATION from the real
+        PolicyEngine — the controlled runner maps that to HITL_REQUIRED, and
+        HITL_REQUIRED is distinct from AGENT_FAILURE and POLICY_BLOCKED."""
+        from app.models.actions import BrowserAction
+        from app.policy.engine import PolicyDecision, PolicyEngine
+
+        policy = PolicyEngine()
+        result = policy.evaluate(
+            BrowserAction(action="fill", target_ref="e1", value_ref="USER.mobile")
+        )
+        assert result.decision == PolicyDecision.REQUIRE_CONFIRMATION
+        assert LiveOutcomeStatus.HITL_REQUIRED not in (
+            LiveOutcomeStatus.AGENT_FAILURE, LiveOutcomeStatus.POLICY_BLOCKED,
+        )

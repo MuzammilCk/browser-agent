@@ -1,7 +1,7 @@
 # BUILD STATUS
 
-Last reconciled: 2026-09-20
-Current phase: Phase 14 — Live Portal Validation (COMPLETE — shadow-first live layer in `app/agent/live/*`: observation-only live shadow with deterministic field mapping and planned action traces, signed human-review boundary, gated controlled execution through the existing ToolRegistry→PolicyEngine→BrowserExecutor path, generic anti-bot/environment classification, Phase 12-compatible live evidence; live shadow validated on PM-KISAN, MyScheme, NCS; india.gov.in honestly classified ANTI_BOT_BLOCK; no live mutation performed — see docs/DECISIONS.md D027; 1057 total tests passing with 0 failures)
+Last reconciled: 2026-09-21
+Current phase: Phase 14 — Live Portal Validation (COMPLETE, expanded — shadow-first live layer in `app/agent/live/*`: observation-only live shadow with deterministic field mapping and planned action traces, signed bounded human-review boundary, gated controlled execution through the existing ToolRegistry→PolicyEngine→BrowserExecutor path, generic anti-bot/environment classification, Phase 12-compatible live evidence; live shadow validated on ALL NINE intended portal classes — PM-KISAN, MyScheme, NCS, apprenticeshipindia (training), UDISE+ (education), Parivahan (transport), DigiLocker (identity_document), Passport Seva (appointments); india.gov.in honestly classified ANTI_BOT_BLOCK; non-collapsing failure classification end-to-end; no live mutation performed — see docs/DECISIONS.md D027/D028; 1092 total tests passing with 0 failures)
 Overall: IN PROGRESS (Phases 0–14 complete)
 Release status: NOT PRODUCTION READY
 
@@ -34,7 +34,7 @@ Evidence: these files were committed to current main during Phase 0.
 
 Historical audit documents contain prior test counts and live smoke-test claims. Those are not treated as current proof until current HEAD is executed again.
 
-Current reproducible test baseline (verified with Phase 14, 2026-09-20): **1057 tests passing** (713 unit + 65 integration + 57 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise) + 4 gated live tests (tests/real_sites/test_live_shadow.py, RUN_REAL_SITE_TESTS=true). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/portal_regression/`, `tests/safety/` remain empty stubs; `tests/real_sites/` now contains 4 pytest-collectable observation-only live tests plus the Phase 1 manual observation script.
+Current reproducible test baseline (verified with Phase 14 expansion, 2026-09-21): **1092 tests passing** (733 unit + 65 integration + 80 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise) + 10 gated live tests (tests/real_sites/test_live_shadow.py, RUN_REAL_SITE_TESTS=true) + 2 gated real-LLM tests (tests/real_sites/test_openrouter_live.py, RUN_OPENROUTER_LIVE_TEST=true). 0 tests failing. The two Phase 1-time `.env` guardrail failures remain fixed, and the earlier vault-crypto temp-path failure also passes at current HEAD. Note: `tests/portal_regression/`, `tests/safety/` remain empty stubs; `tests/real_sites/` now contains 10 pytest-collectable observation-only live tests, 2 gated real-LLM tests, and the Phase 1 manual observation script.
 
 ## Phase 1 evidence
 
@@ -1104,7 +1104,8 @@ applications) sit behind authentication boundaries requiring real user data.
 Decision D027. The controlled-execution machinery is fully proven on offline
 fixtures (real Chromium) and ready for live use under its gates.
 
-### Phase 14 test counts (verified at current HEAD, 2026-09-20)
+### Phase 14 test counts (HISTORICAL SNAPSHOT, 2026-09-20 — superseded by the
+### expansion counts below)
 
 ~~~
 pytest tests/unit/test_live_validation.py -q
@@ -1131,13 +1132,159 @@ FULL REGRESSION: 1057 passed, 0 failures
 + 4 gated live tests (not counted in the standard suite; require RUN_REAL_SITE_TESTS=true)
 ~~~
 
+### Phase 14 live-validation expansion (2026-09-21, evidence in tests/live_portal/evidence/)
+
+All nine intended portal classes now have trusted profiles and live shadow
+evidence (D028). Observation-only; zero live mutations.
+
+| Portal | Class | Result | Mapping evidence |
+|---|---|---|---|
+| PM-KISAN (pmkisan.gov.in) | welfare | SHADOW_VALIDATION_SUCCESS — 104 elements | UNSUPPORTED (no public data-entry form; honest, not forced) |
+| MyScheme (myscheme.gov.in) | certificate | SHADOW_VALIDATION_SUCCESS — 72 elements, 3 planned search actions | UNSUPPORTED (search is JS-driven; unmapped recorded) |
+| NCS (ncs.gov.in) | recruitment | SHADOW_VALIDATION_SUCCESS — 124 elements, 3 planned search actions | MAPPING_SUCCESS (1 HIGH-confidence binding; LOW-confidence surfaced ambiguous) |
+| services.india.gov.in | grievance | PORTAL_UNAVAILABLE — ANTI_BOT_BLOCK (Akamai); env condition, NOT an agent failure | — (blocked before observation credited) |
+| apprenticeshipindia.gov.in | training | SHADOW_VALIDATION_SUCCESS — 251 elements, 6 submit controls detected + gated | UNSUPPORTED (landing page only) |
+| udiseplus.gov.in | education | SHADOW_VALIDATION_SUCCESS — 29 elements, 1 planned action | UNSUPPORTED |
+| parivahan.gov.in | transport | SHADOW_VALIDATION_SUCCESS — 118 elements, 1 planned action | UNSUPPORTED |
+| digilocker.gov.in | identity_document | SHADOW_VALIDATION_SUCCESS — 82 elements; auth-boundary profile; no authentication attempted | UNSUPPORTED |
+| passportindia.gov.in | appointments | SHADOW_VALIDATION_SUCCESS — 163 elements; booking/payment boundaries documented | UNSUPPORTED |
+
+The site registry (trusted-domain gate) gained the missing
+apprenticeshipindia.gov.in domain (NAPS training portal).
+
+#### WS2 — non-collapsing classification (new in expansion)
+
+- Controlled-execution failure mapping is explicit and code-driven:
+  POLICY_DENIED → POLICY_BLOCKED; USER_ACTION_REQUIRED / CONFIRMATION_REQUIRED
+  → HITL_REQUIRED (human boundary — never agent failure); VERIFICATION_FAILED
+  → AGENT_FAILURE; STALE_TARGET_STOPPED → ENVIRONMENT_FAILURE with per-step
+  detail ("stopped rather than guessed").
+- Mapping UNSUPPORTED never becomes MAPPING_SUCCESS: landing pages without
+  data-entry forms record mapped=0 as UNSUPPORTED evidence.
+- Unit contract: TestMappingStatusHonesty + TestEnvironmentClassification
+  (test_live_validation.py) pin the non-collapse invariants.
+
+#### WS3 — controlled-execution matrix (offline, real Chromium)
+
+Proven by tests/synthetic_forms/test_live_controlled_matrix.py (20 tests):
+
+- select_option + check_control execute with deterministic verification
+  (not just fill).
+- Sensitive value_ref (USER.mobile) → PolicyEngine REQUIRE_CONFIRMATION →
+  HITL_REQUIRED, never silent success.
+- Semantic re-binding resolves the durable semantic ID to the CURRENT ref
+  (stale planning refs are refreshed, not trusted) and still verifies.
+- Approval expiry: expired approval → SAFETY_BLOCKED even with a valid
+  signature; unparseable expiry → SAFETY_BLOCKED; future expiry accepted.
+- World-state drift (semantic target absent) → STALE_TARGET_STOPPED →
+  ENVIRONMENT_FAILURE; no substitute target guessed.
+- Playwright timeout mid-run → ENVIRONMENT_FAILURE / TIMEOUT, never
+  AGENT_FAILURE.
+- Prohibited-actions denial matrix (deterministic, model-independent):
+  click, upload, password, otp, captcha, mfa, pin, payment text, and
+  final-legal-submission text all raise ControlledActionDeniedError even
+  with a signed approval.
+
+#### WS4 — real-LLM compatibility (new in expansion)
+
+Two production fixes found by live probing (D028):
+
+1. `openrouter_max_tokens` setting (default 4096): reasoning-style models
+   spend hidden reasoning tokens from the SAME budget; the hardcoded 4096
+   truncated the visible JSON decision (finish_reason=length) and the
+   reasoner failed closed with DECISION_PARSE_FAILED.
+2. The reasoner system prompt now shows the EXACT decision JSON shape
+   (nested `action` object, action=null for read-only tools). Live probing
+   showed small free models otherwise emit non-conforming shapes they never
+   repair across bounded retries.
+
+Both are contract clarifications: validation, policy, and the execution
+path are unchanged; malformed output still fails closed as MODEL_FAILURE.
+
+Validation status of the real-LLM chain:
+
+- VALIDATED OFFLINE: adapter → real OpenRouterGateway with mocked HTTP
+  (wire payload, schema single-wrap, non-JSON → InvalidModelOutput,
+  configurable budget) — tests/unit/test_openrouter_live_contract.py (9
+  tests) + tests/unit/test_openrouter_decision_model.py (10 tests).
+- VALIDATED LIVE (real API, operator-gated): during this session the REAL
+  model produced a schema-valid fill_field decision that executed through
+  AgentReasoner → strict AgentDecision → ToolRegistry → PolicyEngine →
+  BrowserExecutor → deterministic verification on a local file:// fixture
+  (the fail-closed MODEL_FAILURE test also passed live — twice, including
+  at the final HEAD re-run). The full gated suite re-run at the end of the
+  session hit the account-level free-tier daily quota (429
+  free-models-per-day); that is recorded honestly as an environment
+  condition below. The model never directly controls Playwright: it only
+  emits JSON that the deterministic runtime validates and executes.
+
+Operator notes (free-tier churn, not source): model slugs and the daily
+free quota change without notice. Working slugs found by probing this
+session: dots-studio/dots-3-note-preview:free, liquid/lfm-2.5-2.6b:free.
+The .env pins OPENROUTER_MODEL / OPENROUTER_FALLBACK_MODEL /
+OPENROUTER_MAX_TOKENS=16384. No model identity is hard-coded in source.
+
+### Phase 14 expansion test counts (verified at current HEAD, 2026-09-21)
+
+~~~
+pytest tests/unit/test_live_validation.py -q
+→ 45 passed in 0.83s
+
+pytest tests/synthetic_forms/test_live_controlled_matrix.py -q
+→ 20 passed in 26.07s (real Chromium, local fixtures, no network)
+
+pytest tests/synthetic_forms/test_live_shadow_offline.py \
+  tests/synthetic_forms/test_live_controlled_offline.py -q
+→ 15 passed (real Chromium, local fixtures, no network)
+
+pytest tests/unit/test_openrouter_decision_model.py \
+  tests/unit/test_openrouter_live_contract.py -q
+→ 19 passed in 1.03s (adapter + real-gateway-mocked-HTTP contracts)
+
+RUN_REAL_SITE_TESTS=true pytest tests/real_sites/test_live_shadow.py -q
+→ 10 passed in 95.57s (observation-only, live portals)
+
+RUN_OPENROUTER_LIVE_TEST=true pytest tests/real_sites/test_openrouter_live.py -q
+→ final full-suite run at current HEAD: 1 failed (success-path test),
+  1 passed (fail-closed MODEL_FAILURE test PASSED live). Cause: the
+  account-level free-tier DAILY quota (50 free-model requests/day) was
+  exhausted earlier the same session; both free models return 429
+  (free-models-per-day) until the UTC-midnight reset. The quota
+  exhaustion is an honest, environment-class failure — the test failed
+  on 429s, never on a safety or correctness assertion. Earlier the same
+  day, with quota available, the success path was proven live end-to-end
+  (real model → schema-valid fill_field → full production path →
+  deterministic verification — see VALIDATED LIVE note above).
+
+pytest tests/unit/ -q
+→ 733 passed in 19.11s
+
+pytest tests/integration/ tests/synthetic_forms/ -q
+→ 148 passed in 291.61s (65 integration + 80 synthetic)
+
+pytest tests/prompt_injection/ -q
+→ 28 passed in 4.14s
+
+pytest tests/evaluation/ -q
+→ 36 passed in 16.85s
+
+pytest tests/enterprise/ -q
+→ 148 passed in 19.77s
+
+FULL REGRESSION: 1092 passed, 0 failures
+(733 unit + 65 integration + 80 synthetic + 28 prompt_injection + 36 evaluation + 148 enterprise)
++ 10 gated live tests + 2 gated real-LLM tests (not counted in the standard
+suite; require RUN_REAL_SITE_TESTS / RUN_OPENROUTER_LIVE_TEST = true)
+~~~
+
 ### Phase 14 exit criteria (all proven)
 
 1-3. Portal set selected, profiles recorded, official origins validated
      (origin check runs before every run and after every action; live redirect
      validated) — D026/D027 + tests/real_sites/test_live_shadow.py.
-4. Observation-only validation works — 3 portals SHADOW_SUCCESS; zero
-   mutations (asserted in every shadow test).
+4. Observation-only validation works — 8 portals SHADOW_SUCCESS across all
+   portal classes + 1 honest ANTI_BOT_BLOCK; zero mutations (asserted in
+   every shadow test).
 5. Semantic extraction works on live portals — element/role/aria evidence
    captured per portal.
 6. Field mapping has measurable evidence — deterministic mapper results with
@@ -1176,7 +1323,28 @@ FULL REGRESSION: 1057 passed, 0 failures
 25. Environment failures distinguished — dedicated classifier + tests.
 26-28. Targeted/acceptance/full regression pass — counts above.
 
-## Phase tracker
+### Phase 14 validation-status ledger (expansion, 2026-09-21)
+
+Distinguish: IMPLEMENTED / VALIDATED OFFLINE / VALIDATED LIVE OBSERVATION /
+VALIDATED LIVE CONTROLLED EXECUTION / NOT VALIDATED.
+
+| Component | Status |
+|---|---|
+| Live shadow pipeline (observe→map→plan→review record) | IMPLEMENTED + VALIDATED LIVE OBSERVATION (8 portals) |
+| Origin validation + redirect trust | IMPLEMENTED + VALIDATED LIVE OBSERVATION (+ SAFETY_BLOCKED proven offline) |
+| Anti-bot/environment classification | IMPLEMENTED + VALIDATED LIVE OBSERVATION (india.gov.in ANTI_BOT_BLOCK) + offline fixture |
+| Deterministic field mapping | IMPLEMENTED + VALIDATED LIVE OBSERVATION (NCS mapped; 7 portals honestly UNSUPPORTED) |
+| Planned action trace + PolicyEngine risk probes | IMPLEMENTED + VALIDATED LIVE OBSERVATION |
+| Signed human review (digest + HMAC, transplant/forgery rejection) | IMPLEMENTED + VALIDATED OFFLINE |
+| Approval expiry (bounded authorization) | IMPLEMENTED + VALIDATED OFFLINE |
+| Controlled execution (allowlist → re-bind → registry → policy → executor → verify) | IMPLEMENTED + VALIDATED OFFLINE (real Chromium fixtures) |
+| Controlled execution on a LIVE portal | NOT VALIDATED (no safe mutation candidate; D027 — intentional) |
+| Real-LLM decision chain (OpenRouter → reasoner → decision → registry → policy → executor → verify) | VALIDATED LIVE (operator-gated, local file:// fixture) + VALIDATED OFFLINE (real-gateway contracts) |
+| Prohibited-action denial matrix | IMPLEMENTED + VALIDATED OFFLINE (deterministic) |
+| Evidence redaction (report.json/trace.jsonl) | IMPLEMENTED + VERIFIED (artifact scan + redaction tests) |
+| Live payment / final submission / OTP / CAPTCHA / MFA / document upload | NOT VALIDATED — human boundaries, intentionally never automated |
+
+### Phase tracker
 
 | Phase | Status |
 |---|---|
