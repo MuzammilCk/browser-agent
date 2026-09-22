@@ -158,6 +158,16 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default=PROJECT_ROOT / "data")
     docs_dir: Path = Field(default=PROJECT_ROOT / "docs")
 
+    # Phase 15 H8 — deployment posture
+    production_mode: bool = Field(
+        default=False,
+        description=(
+            "Deployment marker. When true, validate_production_readiness() "
+            "treats unsafe configuration as BLOCKING; /ready reports 503. "
+            "Local development leaves it false (warnings only)."
+        ),
+    )
+
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",
@@ -172,6 +182,82 @@ class Settings(BaseSettings):
         if not v:
             return v
         return v
+
+    def validate_production_readiness(
+        self,
+    ) -> tuple[list[str], list[str]]:
+        """Assess deployment readiness — Phase 15 H8.
+
+        Returns (blockers, warnings). Blockers are conditions that make a
+        production deployment unsafe (they fail the /ready endpoint when
+        production_mode is set); warnings surface silently-unsafe dev
+        defaults without changing local behavior.
+
+        Messages name settings, never values (secret safety).
+        """
+        from app.config.settings import is_free_tier_model  # local import
+
+        blockers: list[str] = []
+        warnings: list[str] = []
+
+        if not self.api_token:
+            warnings.append(
+                "api_token is empty: /api/* endpoints are UNAUTHENTICATED "
+                "(localhost dev only)"
+            )
+            if self.production_mode:
+                blockers.append(
+                    "api_token is empty: authentication must be enabled "
+                    "before production exposure"
+                )
+
+        if not self.vault_encryption_key:
+            warnings.append(
+                "vault_encryption_key is empty: vault is stored as "
+                "plaintext (dev/test only)"
+            )
+            if self.production_mode:
+                blockers.append(
+                    "vault_encryption_key is empty: vault must be "
+                    "encrypted at rest in production"
+                )
+
+        if not self.enterprise_worker_token:
+            if self.production_mode:
+                blockers.append(
+                    "enterprise_worker_token is empty: out-of-process "
+                    "worker registration is disabled (fail closed)"
+                )
+
+        if self.production_mode and self.allow_anonymous_model_with_vault:
+            blockers.append(
+                "allow_anonymous_model_with_vault is true in production: "
+                "contested data retention (audit Z6) forbids the anonymous "
+                "model for real PII"
+            )
+        elif (
+            self.production_mode
+            and is_free_tier_model(self.openrouter_model)
+            and self.vault_encryption_key
+        ):
+            blockers.append(
+                "openrouter_model is an anonymous free-tier model while "
+                "vault encryption is configured: pin a named provider "
+                "before processing real PII"
+            )
+        elif is_free_tier_model(self.openrouter_model):
+            warnings.append(
+                "openrouter_model is an anonymous free-tier model with "
+                "contested data retention — do not use with real PII"
+            )
+
+        if not self.document_allowed_dirs:
+            warnings.append(
+                "document_allowed_dirs is empty: upload confinement is "
+                "disabled"
+            )
+
+        return blockers, warnings
 
     def setup_logging(self) -> None:
         """Configure application logging."""

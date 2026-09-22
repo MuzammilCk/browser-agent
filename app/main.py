@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.config.settings import get_settings
 
@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 
 app_settings = get_settings()
 app_settings.setup_logging()
+
+
+def refresh_app_settings() -> None:
+    """Re-read the cached settings singleton (Phase 15 H8).
+
+    Used by tests and by deployments that mutate configuration before
+    serving; keeps the /ready endpoint's view of the world current.
+    """
+    global app_settings
+    app_settings = get_settings()
 
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 
@@ -92,6 +102,37 @@ mount_enterprise_runtime(app)
 async def health_check() -> dict[str, str]:
     """Health endpoint."""
     return {"status": "ok", "service": "government-browser-agent"}
+
+
+@app.get("/ready")
+async def readiness_check() -> JSONResponse:
+    """Readiness endpoint — Phase 15 H8.
+
+    Distinguishes "process up" (/health) from "runtime usable for a
+    production deployment". Always reports component states; when
+    production_mode is set and validation produced blocking conditions,
+    responds 503 so orchestrators fail the deployment.
+    """
+    blockers, warnings = app_settings.validate_production_readiness()
+    ready = not blockers
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ready" if ready else "not_ready",
+            "ready": ready,
+            "checks": {
+                "api_auth": bool(app_settings.api_token),
+                "vault_encryption": bool(app_settings.vault_encryption_key),
+                "enterprise_worker_auth": bool(
+                    app_settings.enterprise_worker_token
+                ),
+                "model": app_settings.openrouter_model,
+                "production_mode": app_settings.production_mode,
+            },
+            "blocking": blockers,
+            "warnings": warnings,
+        },
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
