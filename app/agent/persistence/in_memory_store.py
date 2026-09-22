@@ -257,15 +257,15 @@ class InMemoryCheckpointStore:
     async def record_audit_event(
         self, run_id: str, event_type: str, payload: dict[str, Any]
     ) -> None:
-        # Strip potential secrets defensively
-        safe_payload = {
-            k: v for k, v in payload.items()
-            if not any(secret in k.lower() for secret in ("password", "secret", "otp", "pin", "credential"))
-        }
+        # Phase 15 H6: defense-in-depth redaction aligned with the Phase 11
+        # trace patterns — sensitive keys are replaced with a redaction
+        # marker, not silently dropped, and nested payloads are filtered.
+        from app.agent.persistence.redaction import filter_sensitive_payload
+
         self._audit_events.append({
             "run_id": run_id,
             "event_type": event_type,
-            "payload": safe_payload,
+            "payload": filter_sensitive_payload(payload),
             "timestamp": utc_now_iso(),
         })
 

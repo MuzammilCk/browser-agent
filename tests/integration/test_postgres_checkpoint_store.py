@@ -305,6 +305,10 @@ class TestPostgresConcurrencyPartD:
         assert last_event["event_type"] == "TEST_ACTION"
         payload = last_event["payload"]
         assert "field" in payload
-        # Security: Sensitive keys stripped
-        assert "otp_value" not in payload
-        assert "password" not in payload
+        # Security: sensitive keys carry no raw values. Phase 15 H6 stores an
+        # explicit redaction marker (stronger than silent dropping — the
+        # value is gone AND the redaction is auditable).
+        assert "123456" not in str(payload)
+        assert "secret_password" not in str(payload)
+        assert payload["otp_value"] == "[REDACTED:restricted_secret]"
+        assert payload["password"] == "[REDACTED:restricted_secret]"

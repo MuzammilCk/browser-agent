@@ -635,10 +635,13 @@ class PostgresCheckpointStore:
         self, run_id: str, event_type: str, payload: dict[str, Any]
     ) -> None:
         pool = self._ensure_pool()
-        safe_payload = {
-            k: v for k, v in payload.items()
-            if not any(secret in k.lower() for secret in ("password", "secret", "otp", "pin", "credential"))
-        }
+        # Phase 15 H6: defense-in-depth redaction aligned with the Phase 11
+        # trace patterns (trace.py::_SENSITIVE_KEY_PATTERNS). The payload is
+        # redacted again at the durable boundary even though upstream layers
+        # already scrub — persisted audit rows must never carry secrets.
+        from app.agent.persistence.redaction import filter_sensitive_payload
+
+        safe_payload = filter_sensitive_payload(payload)
         await pool.execute(
             """
             INSERT INTO hitl_audit_events (run_id, event_type, payload, timestamp)
