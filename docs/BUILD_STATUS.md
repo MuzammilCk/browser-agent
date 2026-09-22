@@ -1,9 +1,9 @@
 # BUILD STATUS
 
-Last reconciled: 2026-09-21
-Current phase: Phase 14 — Live Portal Validation (COMPLETE, expanded — shadow-first live layer in `app/agent/live/*`: observation-only live shadow with deterministic field mapping and planned action traces, signed bounded human-review boundary, gated controlled execution through the existing ToolRegistry→PolicyEngine→BrowserExecutor path, generic anti-bot/environment classification, Phase 12-compatible live evidence; live shadow validated on ALL NINE intended portal classes — PM-KISAN, MyScheme, NCS, apprenticeshipindia (training), UDISE+ (education), Parivahan (transport), DigiLocker (identity_document), Passport Seva (appointments); india.gov.in honestly classified ANTI_BOT_BLOCK; non-collapsing failure classification end-to-end; no live mutation performed — see docs/DECISIONS.md D027/D028; 1093 total tests passing + 12 gated skips, 0 failures — audited against actual pytest output 2026-09-21)
-Overall: IN PROGRESS (Phases 0–14 complete)
-Release status: NOT PRODUCTION READY
+Last reconciled: 2026-09-22
+Current phase: Phase 15 — Production Hardening & Release Readiness (COMPLETE — full architecture/readiness audit of Phases 1–14 (docs/PHASE15_AUDIT.md), 8 test-backed hardening items H1–H8 (docs/PHASE15_PLAN.md): verifier secret-safety, bounded model-call timeout, enterprise engine ASK_USER/replan/tool-budget enforcement + budget persistence, cross-process checkpoint resume, worker-API heartbeat/token robustness, audit-event redaction defense in depth, password-field masking (3 layers), startup readiness validation + /ready; release gate classified READY FOR CONTROLLED PILOT (docs/PRODUCTION_READINESS.md); 1186 total tests passing + 12 gated skips, 0 failures — verified against actual pytest output 2026-09-22)
+Overall: IN PROGRESS (Phases 0–15 complete)
+Release status: READY FOR CONTROLLED PILOT — see docs/PRODUCTION_READINESS.md
 
 ## Phase 0 evidence
 
@@ -1383,7 +1383,103 @@ VALIDATED LIVE CONTROLLED EXECUTION / NOT VALIDATED.
 | Evidence redaction (report.json/trace.jsonl) | IMPLEMENTED + VERIFIED (artifact scan + redaction tests) |
 | Live payment / final submission / OTP / CAPTCHA / MFA / document upload | NOT VALIDATED — human boundaries, intentionally never automated |
 
-### Phase tracker
+### Phase 15 evidence
+
+Implemented (test-backed hardening per docs/PHASE15_PLAN.md; NO architectural
+rewrite — every fix is a small change at an existing boundary, and all
+Phase 1–14 invariants hold; the one integration-test semantic change is
+H6's stronger redaction contract, documented below):
+
+- **H1 secret safety in verifier messages** — `describe_value_mismatch`
+  (app/browser/verifiers/base.py) reports mismatch SHAPE (lengths, equality)
+  and never values; fill + select verifiers no longer echo expected/live
+  values (a vault-resolved credential could previously reach ToolResult.message
+  → model context + traces on a mismatch). Tests: tests/unit/test_verifier_secret_safety.py.
+- **H2 bounded model-call timeout** — AgentReasoner wraps each `decide()` in
+  `asyncio.wait_for` (ReasonerConfig.decision_timeout_seconds, default 60);
+  timeout consumes one attempt; exhaustion → explicit MODEL_FAILURE. A hung
+  OpenRouter call previously blocked the run past the worker lease.
+  Tests: tests/unit/test_reasoner_timeout.py.
+- **H3 enterprise engine hardening** — model ASK_USER decisions now pause the
+  run durably (USER_CLARIFICATION_REQUIRED interrupt → PAUSED_HITL) instead of
+  silently burning iterations; REPLAN counts against max_replans; tool-call
+  budget enforced at the engine boundary; budget tracker mutations are
+  persisted into run_state at each mutation so checkpoints carry true counters.
+  Tests: tests/enterprise/test_engine_hardening.py.
+- **H4 cross-process checkpoint resume** — engine resume loads through the
+  async store (`load_checkpoint`) and seeds via `restore_checkpoint_from_json`
+  when available; a fresh worker process can now restore a PostgreSQL-only
+  checkpoint (previously failed "checkpoint not found" — fail closed, but
+  recovery broken). Unknown checkpoints still fail closed.
+  Tests: test_resume_from_async_only_store + forked-store Postgres simulation.
+- **H5 worker API robustness** — /claim caches the fencing token for the
+  (run, worker) pair; heartbeat accepts a body fencing_token (validated by
+  renew_lease) with cache fallback; missing token → 400 (was KeyError → 500);
+  wrong/stale token → 409; non-integer tokens on all report endpoints →
+  deterministic 400 via shared _parse_fencing_token.
+  Tests: tests/enterprise/test_worker_api_hardening.py.
+- **H6 audit redaction defense in depth** — app/agent/persistence/redaction.py
+  aligns durable-store audit filtering with the Phase 11 trace patterns
+  (adds token/cookie/api_key/authorization/session/aadhaar/pan/...), filters
+  recursively, and stores an explicit [REDACTED:restricted_secret] marker
+  instead of silently dropping keys. SEMANTIC CHANGE in one integration test:
+  test_audit_events_recorded_in_postgres now asserts the marker contract
+  (stronger: value gone AND redaction auditable) — not a weakened assertion.
+  Tests: tests/unit/test_audit_redaction.py.
+- **H7 password-field masking (3 layers)** — DOM extraction JS returns '' for
+  password inputs (main + frames); PageObserver._element_from_raw masks any
+  password-typed value ([MASKED]); reasoning context masks again at prompt
+  build. Page-rendered or hostile-page-echoed password values can no longer
+  flow into context/world-state/fingerprints/checkpoints.
+  Tests: tests/unit/test_password_masking.py (+ new fixture login.html).
+- **H8 startup readiness** — Settings.production_mode +
+  validate_production_readiness() (blockers fire only under explicit
+  production_mode; local-dev behavior unchanged); /ready endpoint reports
+  component checks and 503s when blockers exist; refresh_app_settings() for
+  config re-reads. Messages name settings, never values.
+  Tests: tests/unit/test_startup_readiness.py.
+
+### Phase 15 test counts (verified at current HEAD, 2026-09-22)
+
+~~~
+pytest tests -q
+→ 1186 passed, 12 skipped in 317.84s
+
+Per-directory (verified by execution):
+  python -m pytest tests/unit -q        → 808 passed (733 baseline + 75 new)
+  python -m pytest tests/enterprise -q  → 166 passed (148 baseline + 18 new)
+  python -m pytest tests/integration -q → 65 passed (unchanged)
+  python -m pytest tests/prompt_injection -q → 28 passed (unchanged)
+  python -m pytest tests/evaluation -q  → 36 passed (unchanged)
+  (synthetic_forms unchanged at 83 per the full run; the one modified
+   integration assertion is the H6 contract documented above)
+  Sum: 808 + 166 + 65 + 83 + 28 + 36 = 1186 — matches the full run exactly
+
+New test files (7):
+  tests/unit/test_verifier_secret_safety.py   (7 tests)
+  tests/unit/test_reasoner_timeout.py         (6)
+  tests/unit/test_audit_redaction.py          (27)
+  tests/unit/test_password_masking.py         (8)
+  tests/unit/test_startup_readiness.py        (10)
+  tests/enterprise/test_engine_hardening.py   (8)
+  tests/enterprise/test_worker_api_hardening.py (10)
+  (+ tests/synthetic_forms/pages/login.html — H7 masking fixture,
+   exercised by the real-Chromium test inside test_password_masking.py)
+
+Gated (unchanged from Phase 14; the 12 skips in the full run):
+  RUN_REAL_SITE_TESTS=true python -m pytest tests/real_sites/test_live_shadow.py -q → 10 passed (2026-09-21)
+  RUN_OPENROUTER_LIVE_TEST=true python -m pytest tests/real_sites/test_openrouter_live.py -q → 2 gated real-LLM tests
+~~~
+
+### Phase 15 residual risks (accepted, documented in docs/PHASE15_AUDIT.md)
+
+1. Frame disappearance lacks a dedicated adversarial test (generic
+   fail-safe path exists and is covered by UNCERTAIN/EXECUTION_FAILED).
+2. Cancellation granularity is the iteration boundary, not per-Playwright-call.
+3. Memory prompt-injection persistence has no dedicated end-to-end scenario.
+4. Heartbeat API is lightly load-tested (redundant with in-process renewal).
+
+## Phase tracker
 
 | Phase | Status |
 |---|---|
@@ -1402,7 +1498,7 @@ VALIDATED LIVE CONTROLLED EXECUTION / NOT VALIDATED.
 | 12 Evaluation | COMPLETE (causal trace recording, multidimensional metrics, replay divergence engine, regression gates, failure injection, 14 golden scenarios, real Chromium acceptance; exit criterion proven) |
 | 13 Enterprise runtime | COMPLETE (API gateway, workflow service, lease/fenced workers, PostgreSQL queue, vault boundary, durable audit, idempotency, cancellation, tenant isolation; real-Chromium acceptance + crash recovery + multi-tenant + vault isolation proven; live PostgreSQL store tests) |
 | 14 Live portal validation | COMPLETE (shadow-first live layer; live shadow validated on PM-KISAN/MyScheme/NCS; india.gov.in ANTI_BOT_BLOCK classified; signed human-review boundary + gated controlled execution proven on fixtures; no live mutation performed — D027) |
-| 15 Production readiness | NOT STARTED |
+| 15 Production readiness | COMPLETE (full audit docs/PHASE15_AUDIT.md; 8 hardening items H1–H8 implemented with 93 new tests; docs/PHASE15_PLAN.md; release gate in docs/PRODUCTION_READINESS.md) |
 
 ## Production gates
 

@@ -773,3 +773,46 @@ tests/unit/test_openrouter_live_contract.py (real-gateway contract tests).
 
 
 
+
+## D029 — Phase 15 hardening: fix at boundaries, keep the architecture
+
+Phase 15 (2026-09-22). The audit (docs/PHASE15_AUDIT.md) found no
+architectural defect — every confirmed weakness was a missing bound, an
+unenforced budget, or a leak at an existing boundary. Accordingly all
+hardening is boundary-local; the Phase 1–14 invariants are unchanged.
+
+1. Verifier failure messages are SHAPE-ONLY (H1): expected/live field values
+   (potentially vault-resolved credentials) are never formatted into
+   VerificationResult.message — lengths and equality only. This closes the
+   one confirmed path where a secret could reach ToolResult.message → model
+   context and traces.
+2. Model calls are TIME-BOUNDED (H2): ReasonerConfig.decision_timeout_seconds
+   bounds each decide() call; a timeout consumes one attempt and exhaustion
+   produces the standard explicit MODEL_FAILURE. A hung LLM can no longer
+   hold a run past its worker lease.
+3. ASK_USER is a DURABLE HITL pause (H3): a model decision to ask the human
+   raises USER_CLARIFICATION_REQUIRED through the same interrupt path as
+   REQUIRE_CONFIRMATION, instead of silently burning iterations. Replan and
+   tool-call budgets are enforced at the engine boundary, and budget
+   mutations are persisted into run_state at each mutation (checkpoints
+   carry true counters).
+4. Cross-process resume loads through the ASYNC store (H4): the runtime's
+   sync checkpoint surface is a process-local cache for Postgres, so engine
+   resume loads via load_checkpoint + restore_checkpoint_from_json. The
+   sync path remains as fallback; unknown checkpoints still fail closed.
+5. Durable audit rows use MARKER redaction (H6): sensitive keys are replaced
+   with [REDACTED:restricted_secret] (aligned with Phase 11 patterns) rather
+   than silently dropped — value gone AND redaction auditable. One
+   integration test was updated to this strictly stronger contract.
+6. Password fields are masked at THREE layers (H7): DOM extraction, observer,
+   and context assembly — defense in depth against hostile pages and stale
+   artifacts.
+7. Readiness is explicit (H8): validate_production_readiness() blockers fire
+   only under explicit production_mode; /ready 503s when blocking conditions
+   hold. Local-dev defaults keep working unchanged (warnings, not failures).
+8. Live-site scope unchanged: no real government mutation was performed for
+   Phase 15 evidence; the shadow/controlled boundary (D026–D028) is intact.
+
+Status: ACCEPTED — evidence in docs/PHASE15_AUDIT.md, docs/PHASE15_PLAN.md,
+docs/PRODUCTION_READINESS.md, and the 93 new tests recorded in
+docs/BUILD_STATUS.md (Phase 15 evidence).

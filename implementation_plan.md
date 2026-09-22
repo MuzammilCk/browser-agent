@@ -16,7 +16,8 @@ Phase 11 — Security Hardening (COMPLETE)
 Phase 12 — Evaluation Platform (COMPLETE)   
 Phase 13 — Enterprise Runtime (COMPLETE)   
 Phase 14 — Live Portal Validation (COMPLETE)   
-Overall: IN PROGRESS (Phases 0–14 complete; Phase 15 next)     
+Phase 15 — Production Hardening & Release Readiness (COMPLETE, 2026-09-22 — docs/PHASE15_AUDIT.md, docs/PHASE15_PLAN.md, docs/PRODUCTION_READINESS.md; 1186 tests passing + 12 gated skips)   
+Overall: IN PROGRESS (Phases 0–15 complete; release gate: READY FOR CONTROLLED PILOT)     
 Evidence policy: every checkbox requires current evidence.
 
 ---
@@ -954,7 +955,35 @@ environment-class failure recorded as such (see BUILD_STATUS).
 
 ---
 
-# Phase 15 — Enterprise definition of done
+# Phase 15 — Production hardening & release readiness (COMPLETE, 2026-09-22)
+
+Executed per the Phase 15 mission; supersedes the checklist-only section
+below (retained verbatim as the original definition of done). Full audit,
+plan, and release gate live in:
+
+docs/PHASE15_AUDIT.md — subsystem-by-subsystem readiness audit (15 areas),
+  confirmed defect register H1–H8, residual risks.
+docs/PHASE15_PLAN.md — the 8 implemented hardening items with tests and
+  documented deferrals.
+docs/PRODUCTION_READINESS.md — release-gate assessment across 14 gates;
+  classification READY FOR CONTROLLED PILOT.
+docs/BUILD_STATUS.md (Phase 15 evidence) — exact pytest results:
+  python -m pytest tests -q → 1186 passed, 12 skipped (2026-09-22).
+docs/DECISIONS.md D029 — boundary-local hardening decision record.
+
+Summary of hardening implemented (all test-backed; no architectural change):
+
+- H1 verifier secret safety (fill/select messages shape-only)
+- H2 bounded model-decision timeout in AgentReasoner
+- H3 enterprise engine: ASK_USER → durable HITL pause; replan + tool-call
+  budgets enforced; budget state persisted per mutation
+- H4 cross-process checkpoint resume via the async store
+- H5 worker API heartbeat/body-token + deterministic 4xx token errors
+- H6 audit-event redaction aligned with Phase 11 patterns (marker contract)
+- H7 password-field masking at DOM extraction, observer, and context layers
+- H8 production_mode validation + /ready endpoint
+
+# Phase 15 — Enterprise definition of done (ORIGINAL CHECKLIST)
 
 Agent:
 
