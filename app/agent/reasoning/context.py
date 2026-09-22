@@ -113,6 +113,11 @@ def _element_lines(observation: PageObservation) -> list[dict]:
     lines: list[dict] = []
     for el in elements:
         value = el.value
+        # Phase 15 H7: defense in depth — a password-typed field's value is
+        # masked even if an upstream layer failed to mask it (the observer
+        # masks at extraction time too).
+        if value and el.input_type and el.input_type.lower() == "password":
+            value = "[MASKED]"
         if value:
             # Values on the page are shown only as short previews; vault
             # values never reach the observation in raw form anyway, but

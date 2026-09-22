@@ -145,6 +145,12 @@ EXTRACT_ELEMENTS_JS = """
         if (tag === 'input' && (el.type === 'checkbox' || el.type === 'radio')) {
             return el.checked ? 'checked' : 'unchecked';
         }
+        // Phase 15 H7: password-typed inputs are never read into the
+        // observation. The value would otherwise flow into model context,
+        // world state, stall fingerprints and checkpoints.
+        if (tag === 'input' && el.type === 'password') {
+            return '';
+        }
         return el.value || '';
     }
 
@@ -277,6 +283,10 @@ EXTRACT_FRAME_ELEMENTS_JS = """
         }
         if (tag === 'input' && (el.type === 'checkbox' || el.type === 'radio')) {
             return el.checked ? 'checked' : 'unchecked';
+        }
+        // Phase 15 H7: password inputs masked (frame variant).
+        if (tag === 'input' && el.type === 'password') {
+            return '';
         }
         return el.value || '';
     }

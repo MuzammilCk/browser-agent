@@ -43,6 +43,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Phase 15 H7: the only value a password-typed field may expose to the
+# observation pipeline. Raw values never enter ElementState.
+MASKED_PASSWORD_VALUE = "[MASKED]"
+
 
 class PageObserver:
     """Observes a Playwright page and produces a typed PageObservation."""
@@ -144,15 +148,26 @@ class PageObserver:
         return observation
 
     def _element_from_raw(self, raw: dict) -> ElementState:
-        """Convert raw DOM element dict to ElementState model."""
+        """Convert raw DOM element dict to ElementState model.
+
+        Phase 15 H7: password-typed fields are masked HERE (Python-side
+        defense in depth) in addition to the DOM extraction script — a
+        hostile page cannot re-introduce a password value through any
+        extraction path. The model, world state, stall fingerprints and
+        checkpoints only ever see the mask, never the raw value.
+        """
+        input_type = raw.get("input_type")
+        value = raw.get("value")
+        if value and input_type and str(input_type).lower() == "password":
+            value = MASKED_PASSWORD_VALUE
         return ElementState(
             ref=raw.get("ref", ""),
             role=raw.get("role"),
             accessible_name=raw.get("accessible_name"),
             html_name=raw.get("html_name"),
             label_text=raw.get("label_text"),
-            value=raw.get("value"),
-            input_type=raw.get("input_type"),
+            value=value,
+            input_type=input_type,
             required=raw.get("required", False),
             disabled=raw.get("disabled", False),
             checked=raw.get("checked"),
