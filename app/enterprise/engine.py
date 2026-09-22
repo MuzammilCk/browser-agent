@@ -35,6 +35,7 @@ from app.agent.reasoning import (
 )
 from app.agent.runtime.checkpoint import AgentCheckpoint, CheckpointStore
 from app.agent.runtime.decision import AgentDecisionType
+from app.agent.interrupts.models import InterruptReason
 from app.agent.runtime.runtime import AgentRuntime
 from app.agent.runtime.state import AgentLifecycle, AgentRunState
 from app.agent.security.budget import RuntimeBudget, RuntimeBudgetTracker
@@ -144,18 +145,39 @@ class WorkerRunEngine:
 
         # ---- Restore or create the runtime run -----------------------
         if checkpoint_id:
-            try:
-                run_state = runtime.restore_checkpoint(checkpoint_id)
-            except KeyError:
-                return EngineResult(
-                    outcome=EngineOutcome.FAILED,
-                    error=f"checkpoint {checkpoint_id} not found",
-                )
-            except Exception as exc:  # corrupt/incompatible — fail closed
-                return EngineResult(
-                    outcome=EngineOutcome.FAILED,
-                    error=f"checkpoint restore failed: {exc}",
-                )
+            # Phase 15 H4: the engine may run in a FRESH worker process.
+            # The runtime's sync store surface is cache-only for Postgres
+            # (its sync load() never reaches the database), so a
+            # cross-process resume MUST load through the async store first
+            # and seed the runtime from the checkpoint JSON. Without this,
+            # a resumed run whose checkpoint lives only in PostgreSQL
+            # failed with "checkpoint not found" (fail closed, but
+            # recovery broken).
+            restored = False
+            if hasattr(self._checkpoint_store, "load_checkpoint"):
+                try:
+                    cp = await self._checkpoint_store.load_checkpoint(checkpoint_id)
+                    if cp is not None:
+                        run_state = runtime.restore_checkpoint_from_json(cp.to_json())
+                        restored = True
+                except Exception as exc:
+                    return EngineResult(
+                        outcome=EngineOutcome.FAILED,
+                        error=f"checkpoint restore failed: {exc}",
+                    )
+            if not restored:
+                try:
+                    run_state = runtime.restore_checkpoint(checkpoint_id)
+                except KeyError:
+                    return EngineResult(
+                        outcome=EngineOutcome.FAILED,
+                        error=f"checkpoint {checkpoint_id} not found",
+                    )
+                except Exception as exc:  # corrupt/incompatible — fail closed
+                    return EngineResult(
+                        outcome=EngineOutcome.FAILED,
+                        error=f"checkpoint restore failed: {exc}",
+                    )
         else:
             session = runtime.create_session(label="enterprise_worker")
             run_state = runtime.create_run(session=session, goal=goal)
@@ -292,6 +314,9 @@ class WorkerRunEngine:
                 tracker.record_iteration()
             except Exception as exc:
                 return EngineOutcome.FAILED, f"budget exhausted: {exc}", iterations
+            # Phase 15 H3: persist the mutation so every checkpoint (and
+            # cross-process resume) sees the true consumed budget.
+            run_state.save_budget_tracker(tracker)
 
             if rec:
                 rec.record(
@@ -338,13 +363,60 @@ class WorkerRunEngine:
                     output_summary={
                         "decision_type": decision.decision_type.value,
                         "tool_name": decision.tool_name,
+                        "reason": decision.reason[:120],
                     },
                 )
 
             if decision.decision_type is AgentDecisionType.COMPLETE:
                 runtime.transition_toward(run_state, AgentLifecycle.COMPLETED)
                 return EngineOutcome.COMPLETED, None, iterations
+
+            if decision.decision_type is AgentDecisionType.REPLAN:
+                # Phase 15 H3: replans are budgeted (RuntimeBudget.max_replans)
+                # and now enforced + traced in the enterprise loop too.
+                try:
+                    tracker.record_replan()
+                except Exception as exc:
+                    runtime.transition_toward(run_state, AgentLifecycle.FAILED)
+                    return (
+                        EngineOutcome.FAILED,
+                        f"budget exhausted: {exc}",
+                        iterations,
+                    )
+                run_state.save_budget_tracker(tracker)
+                runtime.transition_toward(run_state, AgentLifecycle.REFLECTING)
+                continue
+
+            if decision.decision_type is AgentDecisionType.ASK_USER:
+                # Phase 15 H3: the model deciding to ask the human must
+                # pause durably — never burn iterations in a silent loop.
+                # Same durable path as REQUIRE_CONFIRMATION above.
+                runtime.transition_toward(run_state, AgentLifecycle.WAITING_FOR_USER)
+                interrupt = runtime.raise_human_interrupt(
+                    run_state,
+                    reason=InterruptReason.USER_CLARIFICATION_REQUIRED,
+                    description=(
+                        "Model requested user clarification: "
+                        f"{decision.question[:200]}"
+                    ),
+                    observation_id=ctx.observation.observation_id,
+                    world_state_version=world_state.version,
+                )
+                if rec:
+                    rec.record(
+                        TraceEventType.HITL_INTERRUPT,
+                        subsystem="interrupts",
+                        component="AgentRuntime",
+                        input_summary={
+                            "interrupt_id": interrupt.interrupt_id,
+                            "reason": interrupt.reason.value,
+                        },
+                    )
+                return EngineOutcome.PAUSED_HITL, interrupt.interrupt_id, iterations
+
             if decision.decision_type is not AgentDecisionType.TOOL_CALL:
+                # REFLECT (or any other non-tool decision): bounded by the
+                # iteration budget, no browser mutation, loop continues.
                 runtime.transition_toward(run_state, AgentLifecycle.REFLECTING)
                 continue
 
@@ -403,6 +475,27 @@ class WorkerRunEngine:
                     return EngineOutcome.PAUSED_HITL, interrupt.interrupt_id, iterations
 
             # -- Execute through the typed registry (existing path) ----
+            # Phase 15 H3: tool-call budget is enforced at the engine
+            # boundary too (defense in depth; the runtime budget tracker
+            # is the authority). is_navigation mirrors the navigate tool.
+            try:
+                tracker.record_tool_call(
+                    tool_call.tool_name,
+                    is_navigation=(
+                        tool_call.tool_name == "navigate"
+                    ),
+                )
+            except Exception as exc:
+                runtime.transition_toward(run_state, AgentLifecycle.FAILED)
+                return (
+                    EngineOutcome.FAILED,
+                    f"budget exhausted: {exc}",
+                    iterations,
+                )
+            # Persist budget mutations so checkpoints and cross-process
+            # resumes see the true consumed budget (H3).
+            run_state.save_budget_tracker(tracker)
+
             runtime.transition_toward(run_state, AgentLifecycle.ACTING)
             tool_result = await registry.execute(tool_call, ctx)
             recent_results.append(tool_result)

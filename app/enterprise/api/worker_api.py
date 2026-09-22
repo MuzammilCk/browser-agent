@@ -23,6 +23,23 @@ from app.enterprise.workflow_service import RunTransitionError
 worker_router = APIRouter(prefix="/enterprise/worker", tags=["enterprise-worker"])
 
 
+def _parse_fencing_token(body: dict | None) -> int:
+    """Phase 15 H5: parse a client-supplied fencing token deterministically.
+
+    Missing → 0 (the fenced store write rejects it with the standard
+    lease-lost semantics). Non-integer → explicit 400, never a 500.
+    """
+    raw = (body or {}).get("fencing_token", 0)
+    if raw is None:
+        return 0
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise HTTPException(status_code=400, detail="fencing_token must be an integer")
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="fencing_token must be an integer")
+
+
 class ClaimResponse:
     pass
 
@@ -44,6 +61,9 @@ async def claim_next_run(
     if result is None:
         return {"claimed": False}
     run, lease, item = result
+    # Phase 15 H5: cache the token for this (run, worker) so the claiming
+    # worker's heartbeats resolve server-side even without a body token.
+    cache_worker_token(run.run_id, identity.subject_id, lease.fencing_token)
     return {
         "claimed": True,
         "run_id": run.run_id,
@@ -59,8 +79,17 @@ async def claim_next_run(
 @worker_router.post("/runs/{run_id}/heartbeat")
 async def heartbeat(
     run_id: str,
+    body: dict | None = None,
     identity: Identity = Depends(get_identity),
 ) -> dict:
+    """Renew the caller's lease on a run.
+
+    Phase 15 H5: the fencing token may be supplied in the request body
+    (the token was returned by /claim, so an out-of-process worker can
+    always present it). The process-local cache is a fallback. A missing
+    token is a 400 — never a 500 — and a token that does not match the
+    active lease is the standard fail-closed 409.
+    """
     from app.enterprise.security import require_role
 
     try:
@@ -68,10 +97,24 @@ async def heartbeat(
     except AuthorizationError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     store = _state()["store"]
-    try:
-        fencing_token = int(_worker_token_cache.get(run_id, identity.subject_id))
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="invalid fencing token")
+
+    body_token = (body or {}).get("fencing_token")
+    if body_token is not None:
+        fencing_token = _parse_fencing_token({"fencing_token": body_token})
+    else:
+        try:
+            fencing_token = int(_worker_token_cache.get(run_id, identity.subject_id))
+        except KeyError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "fencing_token required: supply the token returned by "
+                    "/claim in the request body"
+                ),
+            )
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="invalid cached fencing token")
+
     lease = await store.renew_lease(
         run_id, identity.subject_id, fencing_token, 30.0,
     )
@@ -110,8 +153,7 @@ async def report_complete(
     body: dict | None = None,
     identity: Identity = Depends(get_identity),
 ) -> dict:
-    body = body or {}
-    fencing_token = int(body.get("fencing_token", 0))
+    fencing_token = _parse_fencing_token(body)
     service = _state()["service"]
     try:
         run = await service.complete_run(
@@ -131,8 +173,7 @@ async def report_failed(
     body: dict | None = None,
     identity: Identity = Depends(get_identity),
 ) -> dict:
-    body = body or {}
-    fencing_token = int(body.get("fencing_token", 0))
+    fencing_token = _parse_fencing_token(body)
     service = _state()["service"]
     try:
         run = await service.fail_run(
@@ -153,14 +194,13 @@ async def report_paused(
     body: dict | None = None,
     identity: Identity = Depends(get_identity),
 ) -> dict:
-    body = body or {}
     service = _state()["service"]
     try:
         run = await service.report_pause(
             identity, run_id,
-            fencing_token=int(body.get("fencing_token", 0)),
-            paused_hitl=bool(body.get("paused_hitl", True)),
-            checkpoint_id=body.get("checkpoint_id"),
+            fencing_token=_parse_fencing_token(body),
+            paused_hitl=bool((body or {}).get("paused_hitl", True)),
+            checkpoint_id=(body or {}).get("checkpoint_id"),
         )
     except (NotFoundError, AuthorizationError, RunTransitionError) as exc:
         status = 404 if isinstance(exc, NotFoundError) else 409
