@@ -37,6 +37,28 @@ class VerificationResult:
     details: dict = field(default_factory=dict)
 
 
+def describe_value_mismatch(
+    expected: str, actual: str | None, subject: str = "Filled value",
+) -> str:
+    """Shape-only description of a fill-value mismatch — never echoes values.
+
+    Secret-safety (Phase 15 H1): the expected value may be a vault-resolved
+    credential and the live value is page-controlled, so neither may be
+    formatted into a message that reaches the model, traces, or audit records
+    (AGENTS.md rule 6, docs/SECURITY_MODEL.md). Only lengths are reported.
+    """
+    expected_len = len(expected.strip())
+    if actual is None:
+        actual_desc = "unreadable"
+    else:
+        actual_desc = f"{len(actual.strip())} chars"
+    return (
+        f"{subject} did not stick: expected value "
+        f"({expected_len} chars) != live value ({actual_desc}); "
+        "values withheld for secret safety"
+    )
+
+
 def find_element(ref: str, state: PageState) -> ElementState | None:
     """Find element by ref in PageState."""
     for el in state.elements:

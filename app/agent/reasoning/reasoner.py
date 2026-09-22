@@ -28,6 +28,7 @@ Boundary guarantees (user instruction, Phase 4):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from pydantic import BaseModel, Field
@@ -43,6 +44,7 @@ from app.agent.reasoning.protocol import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ATTEMPTS = 3
+DEFAULT_DECISION_TIMEOUT_SECONDS = 60.0
 
 
 class ReasonerConfig(BaseModel):
@@ -51,6 +53,13 @@ class ReasonerConfig(BaseModel):
     max_attempts: int = Field(
         default=DEFAULT_MAX_ATTEMPTS, ge=1, le=5,
         description="Total model attempts per decision (bounded retries)",
+    )
+    decision_timeout_seconds: float = Field(
+        default=DEFAULT_DECISION_TIMEOUT_SECONDS, gt=0.0,
+        description=(
+            "Wall-clock bound on each model call. A hung model call is "
+            "treated as a failed attempt (never an unbounded block)."
+        ),
     )
 
 
@@ -78,6 +87,10 @@ class AgentReasoner:
     @property
     def max_attempts(self) -> int:
         return self._config.max_attempts
+
+    @property
+    def decision_timeout_seconds(self) -> float:
+        return self._config.decision_timeout_seconds
 
     async def reason(
         self,
@@ -109,10 +122,33 @@ class AgentReasoner:
                 )
 
             try:
-                raw = await self._model.decide(
-                    system=context.system_prompt,
-                    context=user_message,
+                raw = await asyncio.wait_for(
+                    self._model.decide(
+                        system=context.system_prompt,
+                        context=user_message,
+                    ),
+                    timeout=self._config.decision_timeout_seconds,
                 )
+            except asyncio.TimeoutError:
+                # Phase 15 H2: a hung model call must never block the run
+                # past the worker lease. The timeout consumes an attempt so
+                # the existing bounded-retry budget still bounds total time;
+                # after the final attempt the standard explicit MODEL_FAILURE
+                # path fires — no silent fallback, fail closed.
+                last_failure = (
+                    DECISION_PARSE_FAILED,
+                    (
+                        f"model call timed out after "
+                        f"{self._config.decision_timeout_seconds}s"
+                    ),
+                )
+                logger.warning(
+                    "Reasoner attempt %d/%d: model call timed out "
+                    "after %.1fs",
+                    attempt, self._config.max_attempts,
+                    self._config.decision_timeout_seconds,
+                )
+                continue
             except Exception as e:  # transport/provider error → bounded retry
                 last_failure = (DECISION_PARSE_FAILED, f"model call failed: {e}")
                 logger.warning(

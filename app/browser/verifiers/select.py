@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.browser.verifiers.base import (
-    find_element, make_failure, make_success, make_uncertain,
+    describe_value_mismatch, find_element, make_failure, make_success,
+    make_uncertain,
 )
 
 if TYPE_CHECKING:
@@ -45,9 +46,15 @@ async def verify_select(
         return make_failure("select", ref, message=f"Element {ref} disappeared")
 
     if action.option and not _option_matches(action.option, target.selected_options, target.value):
+        # Phase 15 H1: option may be a vault-resolved value — never echo it
+        # (or the page's selected values) into the failure message.
         return make_failure(
-            "select", ref, expected=action.option, actual=str(target.selected_options),
-            message=f"Expected '{action.option}' but got {target.selected_options}",
+            "select", ref,
+            message=describe_value_mismatch(
+                action.option,
+                ", ".join(target.selected_options) if target.selected_options else None,
+                subject="Selected option",
+            ),
         )
 
     new_elements = len(curr.elements) - len(prev.elements)

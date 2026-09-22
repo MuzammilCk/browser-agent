@@ -6,7 +6,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.browser.verifiers.base import (
-    VerificationResult, find_element, make_failure, make_success, make_uncertain,
+    VerificationResult, describe_value_mismatch, find_element, make_failure,
+    make_success, make_uncertain,
 )
 
 if TYPE_CHECKING:
@@ -45,9 +46,11 @@ async def verify_fill(
     if expected_value:
         live_value = await _read_live_value(page, ref, target)
         if live_value is not None and live_value.strip() != expected_value.strip():
+            # Phase 15 H1: never echo field values (possibly vault-resolved
+            # credentials) into failure messages; report shape only.
             return make_failure(
-                "fill", ref, expected=expected_value, actual=live_value,
-                message=f"Live value '{live_value}' != expected '{expected_value}'",
+                "fill", ref,
+                message=describe_value_mismatch(expected_value, live_value),
             )
 
     # Check validation errors on this field
